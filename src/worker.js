@@ -4,6 +4,9 @@ export default {
       return new Response("Method not allowed", { status: 405 });
     }
 
+    const BUY_IMAGE_URL = "https://raw.githubusercontent.com/theLifeOfLewis/ls-trades-tv-discord-relay/refs/heads/main/assets/buy.png?token=GHSAT0AAAAAADQVX3AAG4OC2HQPMUQBJU7C2JTH3QQ";
+    const SELL_IMAGE_URL = "https://raw.githubusercontent.com/theLifeOfLewis/ls-trades-tv-discord-relay/refs/heads/main/assets/sell.png?token=GHSAT0AAAAAADQVX3AAPA4RISJOFLX53H3A2JTH3ZA";
+
     let payload;
     try {
       payload = await request.json();
@@ -47,6 +50,7 @@ export default {
     const price = withNA(payload.price);
 
     let content = "";
+    let embeds = [];
 
     switch (type) {
       case "LONG_ENTRY":
@@ -59,6 +63,7 @@ export default {
           `TP1: ${tp1}`,
           `TP2: ${tp2}`
         ].join("\n");
+        embeds = [{ image: { url: BUY_IMAGE_URL } }];
         break;
       case "SHORT_ENTRY":
         content = [
@@ -70,6 +75,7 @@ export default {
           `TP1: ${tp1}`,
           `TP2: ${tp2}`
         ].join("\n");
+        embeds = [{ image: { url: SELL_IMAGE_URL } }];
         break;
       case "LONG_BE":
       case "SHORT_BE":
@@ -119,7 +125,11 @@ export default {
         break;
     }
 
-    const discordBody = JSON.stringify({ content });
+    const discordPayload = { content };
+    if (embeds.length > 0) {
+      discordPayload.embeds = embeds;
+    }
+    const discordBody = JSON.stringify(discordPayload);
 
     const resp = await fetch(webhookUrl, {
       method: "POST",
