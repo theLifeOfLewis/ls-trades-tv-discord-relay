@@ -4,8 +4,8 @@ export default {
       return new Response("Method not allowed", { status: 405 });
     }
 
-    const BUY_IMAGE_URL = "https://raw.githubusercontent.com/theLifeOfLewis/ls-trades-tv-discord-relay/refs/heads/main/assets/buy.png?token=GHSAT0AAAAAADQVX3AAG4OC2HQPMUQBJU7C2JTH3QQ";
-    const SELL_IMAGE_URL = "https://raw.githubusercontent.com/theLifeOfLewis/ls-trades-tv-discord-relay/refs/heads/main/assets/sell.png?token=GHSAT0AAAAAADQVX3AAPA4RISJOFLX53H3A2JTH3ZA";
+    const BUY_IMAGE_URL = "https://github.com/theLifeOfLewis/ls-trades-tv-discord-relay/blob/main/assets/buy.png?raw=1";
+    const SELL_IMAGE_URL = "https://github.com/theLifeOfLewis/ls-trades-tv-discord-relay/blob/main/assets/sell.png?raw=1";
 
     let payload;
     try {
