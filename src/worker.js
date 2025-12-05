@@ -16,65 +16,107 @@ export default {
       return new Response("Missing Discord webhook", { status: 500 });
     }
 
-    const type   = payload.type   || "UNKNOWN";
-    const symbol = payload.symbol || "UNKNOWN";
-    const tf     = payload.tf     || "";
-    const time   = payload.time   || "";
-    const entry  = payload.entry  || "";
-    const sl     = payload.sl     || "";
-    const tp1    = payload.tp1    || "";
-    const tp2    = payload.tp2    || "";
-    const price  = payload.price  || "";
+    const scrub = (value) => {
+      if (value === null || value === undefined) return "";
+      if (typeof value === "string") {
+        const trimmed = value.trim();
+        if (!trimmed || trimmed.toLowerCase() === "null" || trimmed.toLowerCase() === "undefined") {
+          return "";
+        }
+        return trimmed;
+      }
+      if (Number.isNaN(value)) return "";
+      return String(value);
+    };
+
+    const withNA = (value, fallback = "N/A") => {
+      const cleaned = scrub(value);
+      return cleaned === "" ? fallback : cleaned;
+    };
+
+    const typeRaw = scrub(payload.type).toUpperCase();
+    const type = typeRaw || "UNKNOWN";
+    const symbol = scrub(payload.symbol) || "UNKNOWN";
+    const tf = scrub(payload.tf);
+    const symbolLine = [symbol, tf].filter(Boolean).join(" ") || symbol;
+    const time = withNA(payload.time);
+    const entry = withNA(payload.entry);
+    const sl = withNA(payload.sl);
+    const tp1 = withNA(payload.tp1);
+    const tp2 = withNA(payload.tp2);
+    const price = withNA(payload.price);
 
     let content = "";
 
-    if (type === "LONG_ENTRY") {
-      content = [
-        "LONG ENTRY",
-        `${symbol} ${tf}`,
-        `Time: ${time}`,
-        `Entry: ${entry}`,
-        `SL: ${sl}`,
-        `TP1: ${tp1}`,
-        `TP2: ${tp2}`
-      ].join("\n");
-    } else if (type === "LONG_BE") {
-      content = [
-        "BE HIT",
-        `${symbol} ${tf}`,
-        `Time: ${time}`,
-        `Price: ${price}`,
-        "SL moved to entry. Partials secured."
-      ].join("\n");
-    } else if (type === "LONG_TP1") {
-      content = [
-        "TP1 HIT",
-        `${symbol} ${tf}`,
-        `Time: ${time}`,
-        `Price: ${price}`,
-        "Closed 75 percent. 25 percent runner to TP2."
-      ].join("\n");
-    } else if (type === "LONG_TP2") {
-      content = [
-        "TP2 HIT",
-        `${symbol} ${tf}`,
-        `Time: ${time}`,
-        `Price: ${price}`,
-        "Trade fully closed."
-      ].join("\n");
-    } else if (type === "LONG_SL") {
-      content = [
-        "SL HIT",
-        `${symbol} ${tf}`,
-        `Time: ${time}`,
-        `Price: ${price}`,
-        "Trade invalidated."
-      ].join("\n");
-    } else {
-      content = [
-        "UNKNOWN ALERT TYPE",
-        JSON.stringify(payload)
-      ].join("\n");
+    switch (type) {
+      case "LONG_ENTRY":
+        content = [
+          "LONG ENTRY",
+          symbolLine,
+          `Time: ${time}`,
+          `Entry: ${entry}`,
+          `SL: ${sl}`,
+          `TP1: ${tp1}`,
+          `TP2: ${tp2}`
+        ].join("\n");
+        break;
+      case "SHORT_ENTRY":
+        content = [
+          "SHORT ENTRY",
+          symbolLine,
+          `Time: ${time}`,
+          `Entry: ${entry}`,
+          `SL: ${sl}`,
+          `TP1: ${tp1}`,
+          `TP2: ${tp2}`
+        ].join("\n");
+        break;
+      case "LONG_BE":
+      case "SHORT_BE":
+        content = [
+          "BE HIT",
+          symbolLine,
+          `Time: ${time}`,
+          `Price: ${price}`,
+          "SL moved to entry. Partials secured."
+        ].join("\n");
+        break;
+      case "LONG_TP1":
+      case "SHORT_TP1":
+        content = [
+          "TP1 HIT",
+          symbolLine,
+          `Time: ${time}`,
+          `Price: ${price}`,
+          "Closed 75 percent. 25 percent runner to TP2."
+        ].join("\n");
+        break;
+      case "LONG_TP2":
+      case "SHORT_TP2":
+        content = [
+          "TP2 HIT",
+          symbolLine,
+          `Time: ${time}`,
+          `Price: ${price}`,
+          "Trade fully closed."
+        ].join("\n");
+        break;
+      case "LONG_SL":
+      case "SHORT_SL":
+        content = [
+          "SL HIT",
+          symbolLine,
+          `Time: ${time}`,
+          `Price: ${price}`,
+          "Trade invalidated."
+        ].join("\n");
+        break;
+      default:
+        content = [
+          "UNKNOWN ALERT TYPE",
+          JSON.stringify(payload)
+        ].join("\n");
+        break;
     }
 
     const discordBody = JSON.stringify({ content });
