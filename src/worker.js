@@ -84,7 +84,7 @@ export default {
           symbolLine,
           `Time: ${time}`,
           `Price: ${price}`,
-          "SL moved to entry. Partials secured."
+          "1RR SL moved to entry. 50% Partials secured. 💰"
         ].join("\n");
         break;
       case "LONG_TP1":
@@ -94,7 +94,7 @@ export default {
           symbolLine,
           `Time: ${time}`,
           `Price: ${price}`,
-          "Closed 75 percent. 25 percent runner to TP2."
+          "TP1 Smashed! 🔥🔥🔥 Secured a little more 💰. Runner left to TP2."
         ].join("\n");
         break;
       case "LONG_TP2":
@@ -104,7 +104,7 @@ export default {
           symbolLine,
           `Time: ${time}`,
           `Price: ${price}`,
-          "Trade fully closed."
+          "TP2 Smashed! 🔥🔥🔥 Trade fully closed."
         ].join("\n");
         break;
       case "LONG_SL":
@@ -114,7 +114,7 @@ export default {
           symbolLine,
           `Time: ${time}`,
           `Price: ${price}`,
-          "Trade invalidated."
+          "Trade invalidated. 🛑"
         ].join("\n");
         break;
       default:
