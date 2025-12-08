@@ -1,4 +1,43 @@
+// In-memory storage for active trades (resets on worker restart)
+// For production, consider using Durable Objects or KV storage
+let activeTrades = new Map(); // tradeId -> { type, symbol, entry, sl, tp1, tp2, startTime }
+
+async function sendDiscordMessage(webhookUrl, content, embeds = []) {
+  const discordPayload = { content };
+  if (embeds.length > 0) {
+    discordPayload.embeds = embeds;
+  }
+  
+  const resp = await fetch(webhookUrl, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(discordPayload)
+  });
+  
+  return resp.ok;
+}
+
 export default {
+  async scheduled(event, env, ctx) {
+    // This runs on a cron schedule for 4pm EST market close check
+    const webhookUrl = env.DISCORD_WEBHOOK_URL;
+    if (!webhookUrl || activeTrades.size === 0) return;
+
+    // Check if there are active trades at market close
+    for (const [tradeId, trade] of activeTrades.entries()) {
+      const content = [
+        "Hard Stop - Market Close 🔔",
+        `Trade ID: ${tradeId}`,
+        `Type: ${trade.type}`,
+        `Symbol: ${trade.symbol}`,
+        `Entry: ${trade.entry}`,
+        "Active trade will be closed at market close."
+      ].join("\n");
+
+      await sendDiscordMessage(webhookUrl, content);
+    }
+  },
+
   async fetch(request, env, ctx) {
     if (request.method !== "POST") {
       return new Response("Method not allowed", { status: 405 });
@@ -103,10 +142,26 @@ export default {
     const tp1 = withNA(payload.tp1);
     const tp2 = withNA(payload.tp2);
     const price = withNA(payload.price);
+    const tradeId = scrub(payload.tradeId) || `TRADE_${Date.now()}`;
 
+    // Check for active trades
+    const hasActiveTrade = activeTrades.size > 0;
+    
     // Validate entry signals have valid position values and are within trading hours
     const isEntrySignal = type === "LONG_ENTRY" || type === "SHORT_ENTRY";
     if (isEntrySignal) {
+      // Reject if there's already an active trade
+      if (hasActiveTrade) {
+        return new Response(
+          JSON.stringify({ 
+            status: "rejected", 
+            reason: "Active trade already exists",
+            activeTradeId: Array.from(activeTrades.keys())[0]
+          }), 
+          { status: 200, headers: { "Content-Type": "application/json" } }
+        );
+      }
+
       const hasValidPositions = isValidNumber(payload.entry) && 
                                 isValidNumber(payload.sl) && 
                                 isValidNumber(payload.tp1) && 
@@ -125,6 +180,24 @@ export default {
           { status: 200, headers: { "Content-Type": "application/json" } }
         );
       }
+
+      // Register the new trade
+      activeTrades.set(tradeId, {
+        type: type === "LONG_ENTRY" ? "LONG" : "SHORT",
+        symbol,
+        entry,
+        sl,
+        tp1,
+        tp2,
+        startTime: payload.time || new Date().toISOString()
+      });
+    }
+
+    // Handle trade invalidation (SL hit or TP2 hit = trade fully closed)
+    const isTradeClose = type === "LONG_SL" || type === "SHORT_SL" || 
+                         type === "LONG_TP2" || type === "SHORT_TP2";
+    if (isTradeClose && tradeId) {
+      activeTrades.delete(tradeId);
     }
 
     let content = "";
@@ -134,6 +207,7 @@ export default {
       case "LONG_ENTRY":
         content = [
           "Buy NQ|NAS100 Now",
+          `Trade ID: ${tradeId}`,
           symbolLine,
           `Time: ${time}`,
           `Entry: ${entry}`,
@@ -146,6 +220,7 @@ export default {
       case "SHORT_ENTRY":
         content = [
           "Sell NQ|NAS100 Now",
+          `Trade ID: ${tradeId}`,
           symbolLine,
           `Time: ${time}`,
           `Entry: ${entry}`,
@@ -159,6 +234,7 @@ export default {
       case "SHORT_BE":
         content = [
           "BE HIT",
+          `Trade ID: ${tradeId}`,
           symbolLine,
           `Time: ${time}`,
           `Price: ${price}`,
@@ -169,6 +245,7 @@ export default {
       case "SHORT_TP1":
         content = [
           "TP1 HIT",
+          `Trade ID: ${tradeId}`,
           symbolLine,
           `Time: ${time}`,
           `Price: ${price}`,
@@ -179,6 +256,7 @@ export default {
       case "SHORT_TP2":
         content = [
           "TP2 HIT",
+          `Trade ID: ${tradeId}`,
           symbolLine,
           `Time: ${time}`,
           `Price: ${price}`,
@@ -189,6 +267,7 @@ export default {
       case "SHORT_SL":
         content = [
           "SL HIT",
+          `Trade ID: ${tradeId}`,
           symbolLine,
           `Time: ${time}`,
           `Price: ${price}`,
