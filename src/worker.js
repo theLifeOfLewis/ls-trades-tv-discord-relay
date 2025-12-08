@@ -4,8 +4,8 @@ export default {
       return new Response("Method not allowed", { status: 405 });
     }
 
-    const BUY_IMAGE_URL = "https://github.com/theLifeOfLewis/ls-trades-tv-discord-relay/blob/main/assets/buy.png?raw=1";
-    const SELL_IMAGE_URL = "https://github.com/theLifeOfLewis/ls-trades-tv-discord-relay/blob/main/assets/sell.png?raw=1";
+    const BUY_IMAGE_URL = "https://raw.githubusercontent.com/theLifeOfLewis/ls-trades-tv-discord-relay/main/assets/buy.png";
+    const SELL_IMAGE_URL = "https://raw.githubusercontent.com/theLifeOfLewis/ls-trades-tv-discord-relay/main/assets/sell.png";
 
     let payload;
     try {
@@ -37,12 +37,36 @@ export default {
       return cleaned === "" ? fallback : cleaned;
     };
 
+    const formatTime = (timestamp) => {
+      if (!timestamp) return "N/A";
+      try {
+        const date = new Date(timestamp);
+        if (isNaN(date.getTime())) return withNA(timestamp);
+        
+        const options = {
+          timeZone: 'America/New_York',
+          weekday: 'short',
+          year: 'numeric',
+          month: 'short',
+          day: 'numeric',
+          hour: 'numeric',
+          minute: '2-digit',
+          hour12: true
+        };
+        
+        const formatted = new Intl.DateTimeFormat('en-US', options).format(date);
+        return `${formatted} EST`;
+      } catch (e) {
+        return withNA(timestamp);
+      }
+    };
+
     const typeRaw = scrub(payload.type).toUpperCase();
     const type = typeRaw || "UNKNOWN";
     const symbol = scrub(payload.symbol) || "UNKNOWN";
     const tf = scrub(payload.tf);
-    const symbolLine = [symbol, tf].filter(Boolean).join(" ") || symbol;
-    const time = withNA(payload.time);
+    const symbolLine = tf ? `${symbol} ${tf}m` : symbol;
+    const time = formatTime(payload.time);
     const entry = withNA(payload.entry);
     const sl = withNA(payload.sl);
     const tp1 = withNA(payload.tp1);
@@ -55,7 +79,7 @@ export default {
     switch (type) {
       case "LONG_ENTRY":
         content = [
-          "LONG ENTRY",
+          "Buy NQ|NAS100 Now",
           symbolLine,
           `Time: ${time}`,
           `Entry: ${entry}`,
@@ -67,7 +91,7 @@ export default {
         break;
       case "SHORT_ENTRY":
         content = [
-          "SHORT ENTRY",
+          "Sell NQ|NAS100 Now",
           symbolLine,
           `Time: ${time}`,
           `Entry: ${entry}`,
@@ -84,7 +108,7 @@ export default {
           symbolLine,
           `Time: ${time}`,
           `Price: ${price}`,
-          "1RR SL moved to entry. 50% Partials secured. 💰"
+          "TP1 Smashed! 🔥🔥🔥 SL moved to entry. 50% Partials secured. 💰"
         ].join("\n");
         break;
       case "LONG_TP1":
@@ -94,7 +118,7 @@ export default {
           symbolLine,
           `Time: ${time}`,
           `Price: ${price}`,
-          "TP1 Smashed! 🔥🔥🔥 Secured a little more 💰. Runner left to TP2."
+          "TP2 Smashed! 🔥🔥🔥 Secured a little more 💰. Runner left to TP3."
         ].join("\n");
         break;
       case "LONG_TP2":
@@ -104,7 +128,7 @@ export default {
           symbolLine,
           `Time: ${time}`,
           `Price: ${price}`,
-          "TP2 Smashed! 🔥🔥🔥 Trade fully closed."
+          "TP3 Smashed! 🔥🔥🔥 Trade fully closed."
         ].join("\n");
         break;
       case "LONG_SL":
