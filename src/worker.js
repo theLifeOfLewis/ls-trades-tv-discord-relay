@@ -37,6 +37,37 @@ export default {
       return cleaned === "" ? fallback : cleaned;
     };
 
+    const isValidNumber = (value) => {
+      const cleaned = scrub(value);
+      if (cleaned === "" || cleaned === "N/A") return false;
+      const num = parseFloat(cleaned);
+      return !isNaN(num) && isFinite(num);
+    };
+
+    const isWithinTradingHours = (timestamp) => {
+      if (!timestamp) return false;
+      try {
+        const date = new Date(timestamp);
+        if (isNaN(date.getTime())) return false;
+        
+        // Get EST time components
+        const estTime = new Intl.DateTimeFormat('en-US', {
+          timeZone: 'America/New_York',
+          hour: 'numeric',
+          minute: 'numeric',
+          hour12: false
+        }).format(date);
+        
+        const [hours, minutes] = estTime.split(':').map(Number);
+        const totalMinutes = hours * 60 + minutes;
+        
+        // 9:30 AM = 570 minutes, 12:00 PM = 720 minutes
+        return totalMinutes >= 570 && totalMinutes < 720;
+      } catch (e) {
+        return false;
+      }
+    };
+
     const formatTime = (timestamp) => {
       if (!timestamp) return "N/A";
       try {
@@ -72,6 +103,29 @@ export default {
     const tp1 = withNA(payload.tp1);
     const tp2 = withNA(payload.tp2);
     const price = withNA(payload.price);
+
+    // Validate entry signals have valid position values and are within trading hours
+    const isEntrySignal = type === "LONG_ENTRY" || type === "SHORT_ENTRY";
+    if (isEntrySignal) {
+      const hasValidPositions = isValidNumber(payload.entry) && 
+                                isValidNumber(payload.sl) && 
+                                isValidNumber(payload.tp1) && 
+                                isValidNumber(payload.tp2);
+      
+      const withinTradingHours = isWithinTradingHours(payload.time);
+      
+      if (!hasValidPositions || !withinTradingHours) {
+        return new Response(
+          JSON.stringify({ 
+            status: "rejected", 
+            reason: !hasValidPositions ? "Invalid position values" : "Outside trading hours (9:30 AM - 12:00 PM EST)",
+            hasValidPositions,
+            withinTradingHours
+          }), 
+          { status: 200, headers: { "Content-Type": "application/json" } }
+        );
+      }
+    }
 
     let content = "";
     let embeds = [];
