@@ -1,6 +1,6 @@
 name = "ls-trades-tv-discord-relay"
 main = "src/worker.js"
-compatibility_date = "2025-12-04"
+compatibility_date = "2024-12-09"
 
 # Durable Objects bindings
 [[durable_objects.bindings]]
@@ -8,10 +8,10 @@ name = "TRADE_STORAGE"
 class_name = "TradeStorage"
 script_name = "ls-trades-tv-discord-relay"
 
-# Durable Object migrations - Required for free plan
+# Durable Object migrations
 [[migrations]]
 tag = "v1"
-new_sqlite_classes = ["TradeStorage"]
+new_classes = ["TradeStorage"]
 
 # Environment variables
 # Set via: npx wrangler secret put DISCORD_WEBHOOK_URL
