@@ -365,11 +365,12 @@ export default {
       await setTrade(env, tradeId, existingTrade);
     }
 
-    // Handle trade closure (SL, TP2, or partial TP1/BE)
+    // Handle trade closure (SL, TP3, or partial TP1/BE/TP2)
     const isFullClose = type === "LONG_SL" || type === "SHORT_SL" || 
-                        type === "LONG_TP2" || type === "SHORT_TP2";
+                        type === "LONG_TP3" || type === "SHORT_TP3";
     const isPartialClose = type === "LONG_TP1" || type === "SHORT_TP1" ||
-                           type === "LONG_BE" || type === "SHORT_BE";
+                           type === "LONG_BE" || type === "SHORT_BE" ||
+                           type === "LONG_TP2" || type === "SHORT_TP2";
     
     if (isFullClose && tradeId) {
       await deleteTrade(env, tradeId);
@@ -417,7 +418,7 @@ export default {
       case "LONG_BE":
       case "SHORT_BE":
         content = [
-          "BE HIT",
+          "TP1 HIT / BE",
           `Trade ID: ${tradeId}`,
           symbolLine,
           `Time: ${time}`,
@@ -428,7 +429,18 @@ export default {
       case "LONG_TP1":
       case "SHORT_TP1":
         content = [
-          "TP1 HIT",
+          "TP1 HIT / BE",
+          `Trade ID: ${tradeId}`,
+          symbolLine,
+          `Time: ${time}`,
+          `Price: ${price}`,
+          "TP1 Smashed! 🔥🔥🔥 SL moved to entry. 50% Partials secured. 💰"
+        ].join("\n");
+        break;
+      case "LONG_TP2":
+      case "SHORT_TP2":
+        content = [
+          "TP2 HIT",
           `Trade ID: ${tradeId}`,
           symbolLine,
           `Time: ${time}`,
@@ -436,10 +448,10 @@ export default {
           "TP2 Smashed! 🔥🔥🔥 Secured a little more 💰. Runner left to TP3."
         ].join("\n");
         break;
-      case "LONG_TP2":
-      case "SHORT_TP2":
+      case "LONG_TP3":
+      case "SHORT_TP3":
         content = [
-          "TP2 HIT",
+          "TP3 HIT",
           `Trade ID: ${tradeId}`,
           symbolLine,
           `Time: ${time}`,
