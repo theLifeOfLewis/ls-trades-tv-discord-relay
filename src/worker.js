@@ -100,7 +100,7 @@ export default {
     for (const [key, trade] of Object.entries(activeTrades)) {
       const tradeId = key.replace('trade:', '');
       const content = [
-        "Hard Stop - Market Close 🔔",
+        "**Hard Stop - Market Close 🔔**",
         `Trade ID: ${tradeId}`,
         `Type: ${trade.type}`,
         `Symbol: ${trade.symbol}`,
@@ -388,7 +388,7 @@ export default {
     switch (type) {
       case "LONG_ENTRY":
         content = [
-          "Buy NQ|NAS100 Now",
+          "**Buy NQ|NAS100 Now**",
           `Trade ID: ${tradeId}`,
           symbolLine,
           `Time: ${time}`,
@@ -401,7 +401,7 @@ export default {
         break;
       case "SHORT_ENTRY":
         content = [
-          "Sell NQ|NAS100 Now",
+          "**Sell NQ|NAS100 Now**",
           `Trade ID: ${tradeId}`,
           symbolLine,
           `Time: ${time}`,
@@ -415,40 +415,40 @@ export default {
       case "LONG_BE":
       case "SHORT_BE":
         content = [
-          "TP1 HIT / BE",
+          "**TP1 HIT / BE**",
           `Trade ID: ${tradeId}`,
           symbolLine,
           `Time: ${time}`,
           `Price: ${price}`,
-          "TP1 Smashed! 🔥🔥🔥 SL moved to entry. 50% Partials secured. 💰"
+          "TP1 Smashed! 🔥 SL moved to entry. 50% Partials secured. 💰"
         ].join("\n");
         break;
       case "LONG_TP1":
       case "SHORT_TP1":
         content = [
-          "TP1 HIT / BE",
+          "**TP1 HIT / BE*",
           `Trade ID: ${tradeId}`,
           symbolLine,
           `Time: ${time}`,
           `Price: ${price}`,
-          "TP1 Smashed! 🔥🔥🔥 SL moved to entry. 50% Partials secured. 💰"
+          "TP1 Smashed! 🔥 SL moved to entry. 50% Partials secured. 💰"
         ].join("\n");
         break;
       case "LONG_TP2":
       case "SHORT_TP2":
         content = [
-          "TP2 HIT",
+          "**TP2 HIT**",
           `Trade ID: ${tradeId}`,
           symbolLine,
           `Time: ${time}`,
           `Price: ${price}`,
-          "TP2 Smashed! 🔥🔥🔥 Secured a little more 💰. Runner left to TP3."
+          "TP2 Smashed! 🔥🔥 Secured a little more 💰. Runner left to TP3."
         ].join("\n");
         break;
       case "LONG_TP3":
       case "SHORT_TP3":
         content = [
-          "TP3 HIT",
+          "**Trade Update: TP3 HIT**",
           `Trade ID: ${tradeId}`,
           symbolLine,
           `Time: ${time}`,
@@ -459,7 +459,7 @@ export default {
       case "LONG_SL":
       case "SHORT_SL":
         content = [
-          "SL HIT",
+          "**Trade Update: SL HIT**",
           `Trade ID: ${tradeId}`,
           symbolLine,
           `Time: ${time}`,
@@ -471,7 +471,7 @@ export default {
         // Log unknown alert types for debugging
         console.warn("Unknown alert type received:", type, "Payload:", payload);
         content = [
-          "⚠️ UNKNOWN ALERT TYPE",
+          "**⚠️ UNKNOWN ALERT TYPE**",
           `Type: ${type}`,
           `Trade ID: ${tradeId}`,
           `Symbol: ${symbolLine}`,
