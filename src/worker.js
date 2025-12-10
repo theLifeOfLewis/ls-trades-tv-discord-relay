@@ -194,7 +194,6 @@ export default {
       try {
         const date = new Date(timestamp);
         if (isNaN(date.getTime())) return false;
-        
         // Get EST time components
         const estTime = new Intl.DateTimeFormat('en-US', {
           timeZone: 'America/New_York',
@@ -202,12 +201,10 @@ export default {
           minute: 'numeric',
           hour12: false
         }).format(date);
-        
         const [hours, minutes] = estTime.split(':').map(Number);
         const totalMinutes = hours * 60 + minutes;
-        
-        // 9:45 AM = 585 minutes, 11:00 AM = 660 minutes
-        return totalMinutes >= 585 && totalMinutes < 660;
+        // 9:30 AM = 570 minutes, 11:00 AM = 660 minutes
+        return totalMinutes >= 570 && totalMinutes < 660;
       } catch (e) {
         return false;
       }
