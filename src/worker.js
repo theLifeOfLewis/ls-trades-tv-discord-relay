@@ -415,7 +415,7 @@ export default {
       case "LONG_BE":
       case "SHORT_BE":
         content = [
-          "**TP1 HIT / BE**",
+          "**Trade Update: TP1 HIT / BE**",
           `Trade ID: ${tradeId}`,
           symbolLine,
           `Time: ${time}`,
@@ -426,7 +426,7 @@ export default {
       case "LONG_TP1":
       case "SHORT_TP1":
         content = [
-          "**TP1 HIT / BE*",
+          "**Trade Update: TP1 HIT / BE*",
           `Trade ID: ${tradeId}`,
           symbolLine,
           `Time: ${time}`,
@@ -437,7 +437,7 @@ export default {
       case "LONG_TP2":
       case "SHORT_TP2":
         content = [
-          "**TP2 HIT**",
+          "**Trade Update: TP2 HIT**",
           `Trade ID: ${tradeId}`,
           symbolLine,
           `Time: ${time}`,
