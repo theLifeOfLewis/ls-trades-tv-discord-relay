@@ -1,12 +1,105 @@
-// Import Durable Object for persistent storage
-import { TradeStorage } from './TradeStorage.js';
-export { TradeStorage };
+var __defProp = Object.defineProperty;
+var __name = (target, value) => __defProp(target, "name", { value, configurable: true });
 
-// Duplicate prevention still uses in-memory (acceptable for short-lived data)
-let recentSignals = new Map(); // signalKey -> timestamp (for duplicate prevention)
-const DUPLICATE_WINDOW_MS = 5000; // 5 seconds to prevent duplicate signals
+// src/TradeStorage.js
+var TradeStorage = class {
+  static {
+    __name(this, "TradeStorage");
+  }
+  constructor(state, env) {
+    this.state = state;
+    this.env = env;
+  }
+  async fetch(request) {
+    const url = new URL(request.url);
+    try {
+      switch (url.pathname) {
+        case "/get":
+          return await this.handleGet(request);
+        case "/set":
+          return await this.handleSet(request);
+        case "/delete":
+          return await this.handleDelete(request);
+        case "/clear":
+          return await this.handleClear(request);
+        case "/cleanup":
+          return await this.handleCleanup(request);
+        case "/list":
+          return await this.handleList(request);
+        default:
+          return new Response("Not found", { status: 404 });
+      }
+    } catch (error) {
+      return new Response(
+        JSON.stringify({ error: error.message }),
+        { status: 500, headers: { "Content-Type": "application/json" } }
+      );
+    }
+  }
+  async handleGet(request) {
+    const { key } = await request.json();
+    const value = await this.state.storage.get(key);
+    return new Response(
+      JSON.stringify({ value }),
+      { headers: { "Content-Type": "application/json" } }
+    );
+  }
+  async handleSet(request) {
+    const { key, value } = await request.json();
+    await this.state.storage.put(key, value);
+    return new Response(
+      JSON.stringify({ success: true }),
+      { headers: { "Content-Type": "application/json" } }
+    );
+  }
+  async handleDelete(request) {
+    const { key } = await request.json();
+    await this.state.storage.delete(key);
+    return new Response(
+      JSON.stringify({ success: true }),
+      { headers: { "Content-Type": "application/json" } }
+    );
+  }
+  async handleClear(request) {
+    await this.state.storage.deleteAll();
+    return new Response(
+      JSON.stringify({ success: true }),
+      { headers: { "Content-Type": "application/json" } }
+    );
+  }
+  async handleCleanup(request) {
+    const now = Date.now();
+    const maxAge = 24 * 60 * 60 * 1e3;
+    const allTrades = await this.state.storage.list({ prefix: "trade:" });
+    let cleanedCount = 0;
+    for (const [key, trade] of allTrades) {
+      if (trade.lastUpdate && now - trade.lastUpdate > maxAge) {
+        await this.state.storage.delete(key);
+        cleanedCount++;
+      }
+    }
+    return new Response(
+      JSON.stringify({ success: true, cleanedCount }),
+      { headers: { "Content-Type": "application/json" } }
+    );
+  }
+  async handleList(request) {
+    const { prefix } = await request.json().catch(() => ({}));
+    const allEntries = await this.state.storage.list({ prefix: prefix || "" });
+    const entries = {};
+    for (const [key, value] of allEntries) {
+      entries[key] = value;
+    }
+    return new Response(
+      JSON.stringify({ entries }),
+      { headers: { "Content-Type": "application/json" } }
+    );
+  }
+};
 
-// Clean up old entries from recentSignals to prevent memory leak
+// src/worker.js
+var recentSignals = /* @__PURE__ */ new Map();
+var DUPLICATE_WINDOW_MS = 5e3;
 function cleanupRecentSignals() {
   const now = Date.now();
   for (const [key, timestamp] of recentSignals.entries()) {
@@ -15,160 +108,137 @@ function cleanupRecentSignals() {
     }
   }
 }
-
-// Helper to get Durable Object instance
+__name(cleanupRecentSignals, "cleanupRecentSignals");
 function getTradeStorage(env) {
-  const id = env.TRADE_STORAGE.idFromName('global-trades');
+  const id = env.TRADE_STORAGE.idFromName("global-trades");
   return env.TRADE_STORAGE.get(id);
 }
-
-// Helper functions for Durable Object operations
+__name(getTradeStorage, "getTradeStorage");
 async function getActiveTrades(env) {
   const stub = getTradeStorage(env);
-  const response = await stub.fetch('https://fake-host/list', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ prefix: 'trade:' })
+  const response = await stub.fetch("https://fake-host/list", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ prefix: "trade:" })
   });
   const { entries } = await response.json();
   return entries;
 }
-
+__name(getActiveTrades, "getActiveTrades");
 async function getTrade(env, tradeId) {
   const stub = getTradeStorage(env);
-  const response = await stub.fetch('https://fake-host/get', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+  const response = await stub.fetch("https://fake-host/get", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ key: `trade:${tradeId}` })
   });
   const { value } = await response.json();
   return value;
 }
-
+__name(getTrade, "getTrade");
 async function setTrade(env, tradeId, tradeData) {
   const stub = getTradeStorage(env);
-  await stub.fetch('https://fake-host/set', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+  await stub.fetch("https://fake-host/set", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ key: `trade:${tradeId}`, value: tradeData })
   });
 }
-
+__name(setTrade, "setTrade");
 async function deleteTrade(env, tradeId) {
   const stub = getTradeStorage(env);
-  await stub.fetch('https://fake-host/delete', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+  await stub.fetch("https://fake-host/delete", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ key: `trade:${tradeId}` })
   });
 }
-
+__name(deleteTrade, "deleteTrade");
 async function cleanupOldTrades(env) {
   const stub = getTradeStorage(env);
-  await stub.fetch('https://fake-host/cleanup', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' }
+  await stub.fetch("https://fake-host/cleanup", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" }
   });
 }
-
+__name(cleanupOldTrades, "cleanupOldTrades");
 async function sendDiscordMessage(webhookUrl, content, embeds = []) {
   const discordPayload = { content };
   if (embeds.length > 0) {
     discordPayload.embeds = embeds;
   }
-  
   const resp = await fetch(webhookUrl, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(discordPayload)
   });
-  
   return resp.ok;
 }
-
-export default {
+__name(sendDiscordMessage, "sendDiscordMessage");
+var worker_default = {
   async scheduled(event, env, ctx) {
-    // This runs on a cron schedule for 4pm EST market close check
     const webhookUrl = env.DISCORD_WEBHOOK_URL;
     if (!webhookUrl) return;
-
-    // Get active trades from Durable Object
     const activeTrades = await getActiveTrades(env);
     if (Object.keys(activeTrades).length === 0) return;
-
-    // Check if there are active trades at market close
     for (const [key, trade] of Object.entries(activeTrades)) {
-      // Skip trades that are partially closed (TP1/BE hit)
       if (trade.partialClosed) continue;
-      
-      const tradeId = key.replace('trade:', '');
+      const tradeId = key.replace("trade:", "");
       const content = [
-        "**Hard Stop - Market Close 🔔**",
+        "**Hard Stop - Market Close \u{1F514}**",
         `Trade ID: ${tradeId}`,
         `Type: ${trade.type}`,
         `Symbol: ${trade.symbol}`,
         `Entry: ${trade.entry}`,
         "Active trade will be closed at market close."
       ].join("\n");
-
       await sendDiscordMessage(webhookUrl, content);
     }
-    
-    // Cleanup old trades (older than 24 hours)
     await cleanupOldTrades(env);
   },
-
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
-    
-    // Health check endpoint
     if (request.method === "GET" && url.pathname === "/health") {
-      const activeTrades = await getActiveTrades(env);
-      const tradesList = Object.entries(activeTrades).map(([key, t]) => ({
-        id: key.replace('trade:', ''),
+      const activeTrades2 = await getActiveTrades(env);
+      const tradesList = Object.entries(activeTrades2).map(([key, t]) => ({
+        id: key.replace("trade:", ""),
         type: t.type,
         symbol: t.symbol,
         tf: t.tf,
         startTime: t.startTime,
         partialClosed: t.partialClosed || false
       }));
-      
       return new Response(
-        JSON.stringify({ 
+        JSON.stringify({
           status: "ok",
           activeTradesCount: tradesList.length,
           activeTrades: tradesList,
           recentSignalsCount: recentSignals.size,
-          timestamp: new Date().toISOString()
-        }), 
-        { 
-          status: 200, 
-          headers: { "Content-Type": "application/json" } 
+          timestamp: (/* @__PURE__ */ new Date()).toISOString()
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" }
         }
       );
     }
-    
     if (request.method !== "POST") {
       return new Response("Method not allowed", { status: 405 });
     }
-
     const BUY_IMAGE_URL = "https://raw.githubusercontent.com/theLifeOfLewis/ls-trades-tv-discord-relay/main/assets/buy.png";
     const SELL_IMAGE_URL = "https://raw.githubusercontent.com/theLifeOfLewis/ls-trades-tv-discord-relay/main/assets/sell.png";
-
     let payload;
     try {
       payload = await request.json();
     } catch (e) {
       return new Response("Invalid JSON", { status: 400 });
     }
-
     const webhookUrl = env.DISCORD_WEBHOOK_URL;
     if (!webhookUrl) {
       return new Response("Missing Discord webhook", { status: 500 });
     }
-
-    const scrub = (value) => {
-      if (value === null || value === undefined) return "";
+    const scrub = /* @__PURE__ */ __name((value) => {
+      if (value === null || value === void 0) return "";
       if (typeof value === "string") {
         const trimmed = value.trim();
         if (!trimmed || trimmed.toLowerCase() === "null" || trimmed.toLowerCase() === "undefined") {
@@ -178,65 +248,56 @@ export default {
       }
       if (Number.isNaN(value)) return "";
       return String(value);
-    };
-
-    const withNA = (value, fallback = "N/A") => {
+    }, "scrub");
+    const withNA = /* @__PURE__ */ __name((value, fallback = "N/A") => {
       const cleaned = scrub(value);
       return cleaned === "" ? fallback : cleaned;
-    };
-
-    const isValidNumber = (value) => {
+    }, "withNA");
+    const isValidNumber = /* @__PURE__ */ __name((value) => {
       const cleaned = scrub(value);
       if (cleaned === "" || cleaned === "N/A") return false;
       const num = parseFloat(cleaned);
       return !isNaN(num) && isFinite(num);
-    };
-
-    const isWithinTradingHours = (timestamp) => {
+    }, "isValidNumber");
+    const isWithinTradingHours = /* @__PURE__ */ __name((timestamp) => {
       if (!timestamp) return false;
       try {
         const date = new Date(timestamp);
         if (isNaN(date.getTime())) return false;
-        // Get EST time components
-        const estTime = new Intl.DateTimeFormat('en-US', {
-          timeZone: 'America/New_York',
-          hour: 'numeric',
-          minute: 'numeric',
+        const estTime = new Intl.DateTimeFormat("en-US", {
+          timeZone: "America/New_York",
+          hour: "numeric",
+          minute: "numeric",
           hour12: false
         }).format(date);
-        const [hours, minutes] = estTime.split(':').map(Number);
+        const [hours, minutes] = estTime.split(":").map(Number);
         const totalMinutes = hours * 60 + minutes;
-        // 9:30 AM = 570 minutes, 12:00 PM = 720 minutes
         return totalMinutes >= 570 && totalMinutes < 720;
       } catch (e) {
         return false;
       }
-    };
-
-    const formatTime = (timestamp) => {
+    }, "isWithinTradingHours");
+    const formatTime = /* @__PURE__ */ __name((timestamp) => {
       if (!timestamp) return "N/A";
       try {
         const date = new Date(timestamp);
         if (isNaN(date.getTime())) return withNA(timestamp);
-        
         const options = {
-          timeZone: 'America/New_York',
-          weekday: 'short',
-          year: 'numeric',
-          month: 'short',
-          day: 'numeric',
-          hour: 'numeric',
-          minute: '2-digit',
+          timeZone: "America/New_York",
+          weekday: "short",
+          year: "numeric",
+          month: "short",
+          day: "numeric",
+          hour: "numeric",
+          minute: "2-digit",
           hour12: true
         };
-        
-        const formatted = new Intl.DateTimeFormat('en-US', options).format(date);
+        const formatted = new Intl.DateTimeFormat("en-US", options).format(date);
         return `${formatted} EST`;
       } catch (e) {
         return withNA(timestamp);
       }
-    };
-
+    }, "formatTime");
     const typeRaw = scrub(payload.type).toUpperCase();
     const type = typeRaw || "UNKNOWN";
     const symbol = scrub(payload.symbol) || "UNKNOWN";
@@ -249,88 +310,62 @@ export default {
     const tp2 = withNA(payload.tp2);
     const price = withNA(payload.price);
     const tradeId = scrub(payload.tradeId) || `TRADE_${Date.now()}`;
-
-    // Clean up old recent signals periodically
     cleanupRecentSignals();
-
-    // Create a unique key for duplicate detection
     const signalKey = `${type}_${tradeId}_${entry}_${time}`;
     const now = Date.now();
-    
-    // Check for duplicate signal within time window
     if (recentSignals.has(signalKey)) {
       const lastSeen = recentSignals.get(signalKey);
       if (now - lastSeen < DUPLICATE_WINDOW_MS) {
         return new Response(
-          JSON.stringify({ 
-            status: "rejected", 
+          JSON.stringify({
+            status: "rejected",
             reason: "Duplicate signal detected within 5 seconds",
             signalKey
-          }), 
+          }),
           { status: 200, headers: { "Content-Type": "application/json" } }
         );
       }
     }
-    
-    // Record this signal
     recentSignals.set(signalKey, now);
-
-    // Validate tradeId format (should be a number from Pine Script)
     if (tradeId && !tradeId.startsWith("TRADE_") && (isNaN(parseInt(tradeId)) || parseInt(tradeId) <= 0)) {
       return new Response(
-        JSON.stringify({ 
-          status: "rejected", 
+        JSON.stringify({
+          status: "rejected",
           reason: "Invalid trade ID format",
           tradeId
-        }), 
+        }),
         { status: 400, headers: { "Content-Type": "application/json" } }
       );
     }
-
-    // Check for active trades
     const activeTrades = await getActiveTrades(env);
     const hasActiveTrade = Object.keys(activeTrades).length > 0;
-    
-    // Validate entry signals have valid position values and are within trading hours
     const isEntrySignal = type === "LONG_ENTRY" || type === "SHORT_ENTRY";
     if (isEntrySignal) {
-      // Reject if there's already an active trade
       if (hasActiveTrade) {
-        const activeTradesList = Object.entries(activeTrades)
-          .map(([key, t]) => `${key.replace('trade:', '')} (${t.type} ${t.symbol} ${t.tf ? t.tf + 'm' : ''})`)
-          .join(", ");
-        
+        const activeTradesList = Object.entries(activeTrades).map(([key, t]) => `${key.replace("trade:", "")} (${t.type} ${t.symbol} ${t.tf ? t.tf + "m" : ""})`).join(", ");
         return new Response(
-          JSON.stringify({ 
-            status: "rejected", 
+          JSON.stringify({
+            status: "rejected",
             reason: "Active trade already exists",
             activeTrades: activeTradesList
-          }), 
+          }),
           { status: 200, headers: { "Content-Type": "application/json" } }
         );
       }
-
-      const hasValidPositions = isValidNumber(payload.entry) && 
-                                isValidNumber(payload.sl) && 
-                                isValidNumber(payload.tp1) && 
-                                isValidNumber(payload.tp2);
-      
+      const hasValidPositions = isValidNumber(payload.entry) && isValidNumber(payload.sl) && isValidNumber(payload.tp1) && isValidNumber(payload.tp2);
       const withinTradingHours = isWithinTradingHours(payload.time);
-      
       if (!hasValidPositions || !withinTradingHours) {
         return new Response(
-          JSON.stringify({ 
-            status: "rejected", 
+          JSON.stringify({
+            status: "rejected",
             reason: !hasValidPositions ? "Invalid position values" : "Outside trading hours (9:30 AM - 12:00 PM EST)",
             hasValidPositions,
             withinTradingHours,
             receivedValues: { entry: payload.entry, sl: payload.sl, tp1: payload.tp1, tp2: payload.tp2 }
-          }), 
+          }),
           { status: 200, headers: { "Content-Type": "application/json" } }
         );
       }
-
-      // Register the new trade in Durable Object
       await setTrade(env, tradeId, {
         type: type === "LONG_ENTRY" ? "LONG" : "SHORT",
         symbol,
@@ -339,43 +374,31 @@ export default {
         sl,
         tp1,
         tp2,
-        startTime: payload.time || new Date().toISOString(),
+        startTime: payload.time || (/* @__PURE__ */ new Date()).toISOString(),
         lastUpdate: now
       });
     }
-
-    // Validate trade exists for non-entry signals
     if (!isEntrySignal && type !== "UNKNOWN") {
-      // For TP/SL alerts, verify the trade exists
       const existingTrade = await getTrade(env, tradeId);
       if (!existingTrade) {
         return new Response(
-          JSON.stringify({ 
-            status: "rejected", 
+          JSON.stringify({
+            status: "rejected",
             reason: "No active trade found with this ID",
             tradeId,
             type
-          }), 
+          }),
           { status: 200, headers: { "Content-Type": "application/json" } }
         );
       }
-      
-      // Update last activity timestamp
       existingTrade.lastUpdate = now;
       await setTrade(env, tradeId, existingTrade);
     }
-
-    // Handle trade closure (SL, TP3, or partial TP1/BE/TP2)
-    const isFullClose = type === "LONG_SL" || type === "SHORT_SL" || 
-                        type === "LONG_TP3" || type === "SHORT_TP3";
-    const isPartialClose = type === "LONG_TP1" || type === "SHORT_TP1" ||
-                           type === "LONG_BE" || type === "SHORT_BE" ||
-                           type === "LONG_TP2" || type === "SHORT_TP2";
-    
+    const isFullClose = type === "LONG_SL" || type === "SHORT_SL" || type === "LONG_TP3" || type === "SHORT_TP3";
+    const isPartialClose = type === "LONG_TP1" || type === "SHORT_TP1" || type === "LONG_BE" || type === "SHORT_BE" || type === "LONG_TP2" || type === "SHORT_TP2";
     if (isFullClose && tradeId) {
       await deleteTrade(env, tradeId);
     } else if (isPartialClose && tradeId) {
-      // Keep trade active but mark partial closure
       const trade = await getTrade(env, tradeId);
       if (trade) {
         trade.partialClosed = true;
@@ -384,10 +407,8 @@ export default {
         await setTrade(env, tradeId, trade);
       }
     }
-
     let content = "";
     let embeds = [];
-
     switch (type) {
       case "LONG_ENTRY":
         content = [
@@ -423,7 +444,7 @@ export default {
           symbolLine,
           `Time: ${time}`,
           `Price: ${price}`,
-          "TP1 Smashed! 🔥 SL moved to entry. 50% Partials secured. 💰"
+          "TP1 Smashed! \u{1F525} SL moved to entry. 50% Partials secured. \u{1F4B0}"
         ].join("\n");
         break;
       case "LONG_TP1":
@@ -434,7 +455,7 @@ export default {
           symbolLine,
           `Time: ${time}`,
           `Price: ${price}`,
-          "TP1 Smashed! 🔥 SL moved to entry. 50% Partials secured. 💰"
+          "TP1 Smashed! \u{1F525} SL moved to entry. 50% Partials secured. \u{1F4B0}"
         ].join("\n");
         break;
       case "LONG_TP2":
@@ -445,7 +466,7 @@ export default {
           symbolLine,
           `Time: ${time}`,
           `Price: ${price}`,
-          "TP2 Smashed! 🔥🔥 Secured a little more 💰. Runner left to TP3."
+          "TP2 Smashed! \u{1F525}\u{1F525} Secured a little more \u{1F4B0}. Runner left to TP3."
         ].join("\n");
         break;
       case "LONG_TP3":
@@ -456,7 +477,7 @@ export default {
           symbolLine,
           `Time: ${time}`,
           `Price: ${price}`,
-          "TP3 Smashed! 🔥🔥🔥 Trade fully closed."
+          "TP3 Smashed! \u{1F525}\u{1F525}\u{1F525} Trade fully closed."
         ].join("\n");
         break;
       case "LONG_SL":
@@ -467,14 +488,13 @@ export default {
           symbolLine,
           `Time: ${time}`,
           `Price: ${price}`,
-          "Trade invalidated. 🛑"
+          "Trade invalidated. \u{1F6D1}"
         ].join("\n");
         break;
       default:
-        // Log unknown alert types for debugging
         console.warn("Unknown alert type received:", type, "Payload:", payload);
         content = [
-          "**⚠️ UNKNOWN ALERT TYPE**",
+          "**\u26A0\uFE0F UNKNOWN ALERT TYPE**",
           `Type: ${type}`,
           `Trade ID: ${tradeId}`,
           `Symbol: ${symbolLine}`,
@@ -483,13 +503,11 @@ export default {
         ].join("\n");
         break;
     }
-
     const discordPayload = { content };
     if (embeds.length > 0) {
       discordPayload.embeds = embeds;
     }
     const discordBody = JSON.stringify(discordPayload);
-
     let resp;
     try {
       resp = await fetch(webhookUrl, {
@@ -500,40 +518,42 @@ export default {
     } catch (error) {
       console.error("Failed to send Discord message:", error);
       return new Response(
-        JSON.stringify({ 
-          status: "error", 
+        JSON.stringify({
+          status: "error",
           reason: "Failed to connect to Discord",
-          error: error.message 
-        }), 
+          error: error.message
+        }),
         { status: 502, headers: { "Content-Type": "application/json" } }
       );
     }
-
     if (!resp.ok) {
       const errorText = await resp.text();
       console.error("Discord webhook error:", resp.status, errorText);
       return new Response(
-        JSON.stringify({ 
-          status: "error", 
+        JSON.stringify({
+          status: "error",
           reason: "Discord webhook rejected the message",
           httpStatus: resp.status,
           details: errorText
-        }), 
+        }),
         { status: 502, headers: { "Content-Type": "application/json" } }
       );
     }
-
-    // Success response with confirmation
     const finalActiveTrades = await getActiveTrades(env);
     return new Response(
-      JSON.stringify({ 
-        status: "success", 
+      JSON.stringify({
+        status: "success",
         type,
         tradeId,
         activeTradesCount: Object.keys(finalActiveTrades).length,
         message: "Alert sent to Discord"
-      }), 
+      }),
       { status: 200, headers: { "Content-Type": "application/json" } }
     );
   }
 };
+export {
+  TradeStorage,
+  worker_default as default
+};
+//# sourceMappingURL=worker.js.map
