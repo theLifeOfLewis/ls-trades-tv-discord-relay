@@ -205,8 +205,8 @@ export default {
         }).format(date);
         const [hours, minutes] = estTime.split(':').map(Number);
         const totalMinutes = hours * 60 + minutes;
-        // 9:34 AM = 574 minutes, 11:00 AM = 660 minutes
-        return totalMinutes >= 574 && totalMinutes <= 660;
+        // 9:34 AM = 574 minutes, 12:00 PM = 720 minutes
+        return totalMinutes >= 574 && totalMinutes <= 720;
       } catch (e) {
         return false;
       }
@@ -320,7 +320,7 @@ export default {
         return new Response(
           JSON.stringify({ 
             status: "rejected", 
-            reason: !hasValidPositions ? "Invalid position values" : "Outside trading hours (9:34 AM - 11:00 AM EST)",
+            reason: !hasValidPositions ? "Invalid position values" : "Outside trading hours (9:34 AM - 12:00 PM EST)",
             hasValidPositions,
             withinTradingHours,
             receivedValues: { entry: payload.entry, sl: payload.sl, tp1: payload.tp1, tp2: payload.tp2 }
