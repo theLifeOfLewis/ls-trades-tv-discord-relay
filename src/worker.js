@@ -98,9 +98,6 @@ export default {
 
     // Check if there are active trades at market close
     for (const [key, trade] of Object.entries(activeTrades)) {
-      // Skip trades that are partially closed (TP1/BE hit)
-      if (trade.partialClosed) continue;
-      
       const tradeId = key.replace('trade:', '');
       const content = [
         "**Hard Stop - Market Close 🔔**",
@@ -206,8 +203,8 @@ export default {
         }).format(date);
         const [hours, minutes] = estTime.split(':').map(Number);
         const totalMinutes = hours * 60 + minutes;
-        // 9:30 AM = 570 minutes, 12:00 PM = 720 minutes
-        return totalMinutes >= 570 && totalMinutes < 720;
+        // 9:30 AM = 570 minutes, 11:00 AM = 660 minutes
+        return totalMinutes >= 570 && totalMinutes <= 660;
       } catch (e) {
         return false;
       }
