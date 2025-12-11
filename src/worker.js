@@ -111,8 +111,10 @@ export default {
       await sendDiscordMessage(webhookUrl, content);
     }
     
-    // Cleanup old trades (older than 24 hours)
-    await cleanupOldTrades(env);
+    // Close all active trades at market close
+    for (const [key] of Object.entries(activeTrades)) {
+      await deleteTrade(env, key.replace('trade:', ''));
+    }
   },
 
   async fetch(request, env, ctx) {
