@@ -238,10 +238,13 @@ export default {
 
     const typeRaw = scrub(payload.type).toUpperCase();
     const type = typeRaw || "UNKNOWN";
-    const symbol = scrub(payload.symbol) || "UNKNOWN";
-    const tf = scrub(payload.tf);
-    const symbolLine = tf ? `${symbol} ${tf}m` : symbol;
-    const time = formatTime(payload.time);
+    let symbol = scrub(payload.symbol) || "UNKNOWN";
+    let tf = scrub(payload.tf);
+    const isEntrySignal = type === "LONG_ENTRY" || type === "SHORT_ENTRY";
+    
+    // For non-entry signals, we'll get symbol/tf from the trade later
+    // Time: use payload for entry, current time for updates
+    const time = isEntrySignal ? formatTime(payload.time) : formatTime(new Date().toISOString());
     const entry = withNA(payload.entry);
     const sl = withNA(payload.sl);
     const tp1 = withNA(payload.tp1);
@@ -291,7 +294,6 @@ export default {
     const hasActiveTrade = Object.keys(activeTrades).length > 0;
     
     // Validate entry signals have valid position values and are within trading hours
-    const isEntrySignal = type === "LONG_ENTRY" || type === "SHORT_ENTRY";
     if (isEntrySignal) {
       // Reject if there's already an active trade
       if (hasActiveTrade) {
@@ -344,9 +346,10 @@ export default {
     }
 
     // Validate trade exists for non-entry signals
+    let existingTrade = null;
     if (!isEntrySignal && type !== "UNKNOWN") {
       // For TP/SL alerts, verify the trade exists
-      const existingTrade = await getTrade(env, tradeId);
+      existingTrade = await getTrade(env, tradeId);
       if (!existingTrade) {
         return new Response(
           JSON.stringify({ 
@@ -359,10 +362,16 @@ export default {
         );
       }
       
+      // Use trade's symbol and tf for the message
+      symbol = existingTrade.symbol;
+      tf = existingTrade.tf;
+      
       // Update last activity timestamp
       existingTrade.lastUpdate = now;
       await setTrade(env, tradeId, existingTrade);
     }
+
+    const symbolLine = tf ? `${symbol} ${tf}m` : symbol;
 
     // Handle trade closure (SL, TP2, or partial TP1/BE)
     const isFullClose = type === "LONG_SL" || type === "SHORT_SL" || 
