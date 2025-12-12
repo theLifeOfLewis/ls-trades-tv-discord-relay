@@ -421,18 +421,18 @@ export default {
           symbolLine,
           `Time: ${time}`,
           `Price: ${price}`,
-          "TP1 Smashed! 🔥 SL moved to entry. 50% Partials secured. 💰"
+          "TP1 Smashed! 🔥 SL moved to entry. Partials secured. 💰"
         ].join("\n");
         break;
       case "LONG_TP1":
       case "SHORT_TP1":
         content = [
-          "**Trade Update: TP1 HIT / BE*",
+          "**Trade Update: TP1 HIT / BE**",
           `Trade ID: ${tradeId}`,
           symbolLine,
           `Time: ${time}`,
           `Price: ${price}`,
-          "TP1 Smashed! 🔥 SL moved to entry. 50% Partials secured. 💰"
+          "TP1 Smashed! 🔥 SL moved to entry. Partials secured. 💰"
         ].join("\n");
         break;
       case "LONG_TP2":
