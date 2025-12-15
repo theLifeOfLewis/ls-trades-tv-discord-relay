@@ -21,3 +21,11 @@ new_sqlite_classes = ["TradeStorage"]
 # 4:00 PM EST = 9:00 PM UTC (winter) / 8:00 PM UTC (summer with DST)
 [triggers]
 crons = ["0 21 * * 1-5"]  # Runs at 9 PM UTC, Monday-Friday
+
+# Enable logging for debugging
+[observability]
+enabled = true
+
+[observability.logs]
+enabled = true
+invocation_logs = true
