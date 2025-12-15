@@ -86,6 +86,14 @@ async function sendDiscordMessage(webhookUrl, content, embeds = []) {
   return resp.ok;
 }
 
+// Helper for consistent JSON responses
+function jsonResponse(obj, status = 200) {
+  return new Response(JSON.stringify(obj), {
+    status,
+    headers: { 'Content-Type': 'application/json' }
+  });
+}
+
 export default {
   async scheduled(event, env, ctx) {
     // This runs on a cron schedule for 4pm EST market close check
@@ -148,7 +156,7 @@ export default {
     }
     
     if (request.method !== "POST") {
-      return new Response("Method not allowed", { status: 405 });
+      return jsonResponse({ status: 'rejected', reason: 'Method not allowed' }, 405);
     }
 
     const BUY_IMAGE_URL = "https://raw.githubusercontent.com/theLifeOfLewis/ls-trades-tv-discord-relay/main/assets/buy.png";
@@ -159,7 +167,7 @@ export default {
     try {
       rawBody = await request.text();
     } catch (e) {
-      return new Response("Invalid request body", { status: 400 });
+      return jsonResponse({ status: 'rejected', reason: 'Invalid request body', error: String(e) }, 400);
     }
 
     const receivedTimestampUTC = new Date().toISOString();
@@ -169,7 +177,7 @@ export default {
       try {
         payload = JSON.parse(rawBody);
       } catch (e) {
-        return new Response("Invalid JSON", { status: 400 });
+        return jsonResponse({ status: 'rejected', reason: 'Invalid JSON', rawBody, error: String(e) }, 400);
       }
     }
 
@@ -191,7 +199,7 @@ export default {
 
     const webhookUrl = env.DISCORD_WEBHOOK_URL;
     if (!webhookUrl) {
-      return new Response("Missing Discord webhook", { status: 500 });
+      return jsonResponse({ status: 'rejected', reason: 'Missing Discord webhook' }, 500);
     }
 
     const scrub = (value) => {
