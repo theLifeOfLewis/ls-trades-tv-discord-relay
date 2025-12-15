@@ -154,24 +154,39 @@ export default {
     const BUY_IMAGE_URL = "https://raw.githubusercontent.com/theLifeOfLewis/ls-trades-tv-discord-relay/main/assets/buy.png";
     const SELL_IMAGE_URL = "https://raw.githubusercontent.com/theLifeOfLewis/ls-trades-tv-discord-relay/main/assets/sell.png";
 
-    let payload;
+    // Read raw body so we can log it, then parse JSON from it
+    let rawBody = "";
     try {
-      payload = await request.json();
+      rawBody = await request.text();
     } catch (e) {
-      return new Response("Invalid JSON", { status: 400 });
+      return new Response("Invalid request body", { status: 400 });
     }
 
-    // Log incoming hits for observability (method, url, type, tradeId, timestamp)
+    const receivedTimestampUTC = new Date().toISOString();
+
+    let payload = {};
+    if (rawBody) {
+      try {
+        payload = JSON.parse(rawBody);
+      } catch (e) {
+        return new Response("Invalid JSON", { status: 400 });
+      }
+    }
+
+    // Log incoming hits for observability: raw body, headers, and received UTC timestamp
     try {
+      const headersObj = Object.fromEntries(request.headers.entries());
       console.log("Incoming hit", {
         method: request.method,
         url: request.url,
+        headers: headersObj,
+        rawBody,
         type: payload && payload.type ? String(payload.type).trim() : "",
         tradeId: payload && payload.tradeId ? String(payload.tradeId).trim() : "",
-        timestamp: new Date().toISOString()
+        receivedTimestampUTC
       });
     } catch (e) {
-      // Ignore logging errors so they don't affect request handling
+      // Swallow logging errors so they don't affect request handling
     }
 
     const webhookUrl = env.DISCORD_WEBHOOK_URL;
