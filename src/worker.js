@@ -161,6 +161,19 @@ export default {
       return new Response("Invalid JSON", { status: 400 });
     }
 
+    // Log incoming hits for observability (method, url, type, tradeId, timestamp)
+    try {
+      console.log("Incoming hit", {
+        method: request.method,
+        url: request.url,
+        type: payload && payload.type ? String(payload.type).trim() : "",
+        tradeId: payload && payload.tradeId ? String(payload.tradeId).trim() : "",
+        timestamp: new Date().toISOString()
+      });
+    } catch (e) {
+      // Ignore logging errors so they don't affect request handling
+    }
+
     const webhookUrl = env.DISCORD_WEBHOOK_URL;
     if (!webhookUrl) {
       return new Response("Missing Discord webhook", { status: 500 });
