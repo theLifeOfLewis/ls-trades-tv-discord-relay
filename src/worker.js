@@ -279,8 +279,8 @@ export default {
     const isEntrySignal = type === "LONG_ENTRY" || type === "SHORT_ENTRY";
     
     // For non-entry signals, we'll get symbol/tf from the trade later
-    // Time: use payload for entry, current time for updates
-    const time = isEntrySignal ? formatTime(payload.time) : formatTime(new Date().toISOString());
+    // Time: prefer the TradingView-provided time when present for all signal types
+    const time = (payload && payload.time) ? formatTime(payload.time) : formatTime(new Date().toISOString());
     const entry = withNA(payload.entry);
     const sl = withNA(payload.sl);
     const tp1 = withNA(payload.tp1);
