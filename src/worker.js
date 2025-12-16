@@ -227,27 +227,6 @@ export default {
       return !isNaN(num) && isFinite(num);
     };
 
-    const isWithinTradingHours = (timestamp) => {
-      if (!timestamp) return false;
-      try {
-        const date = new Date(timestamp);
-        if (isNaN(date.getTime())) return false;
-        // Get EST time components
-        const estTime = new Intl.DateTimeFormat('en-US', {
-          timeZone: 'America/New_York',
-          hour: 'numeric',
-          minute: 'numeric',
-          hour12: false
-        }).format(date);
-        const [hours, minutes] = estTime.split(':').map(Number);
-        const totalMinutes = hours * 60 + minutes;
-        // 9:34 AM = 574 minutes, 12:00 PM = 720 minutes
-        return totalMinutes >= 574 && totalMinutes <= 720;
-      } catch (e) {
-        return false;
-      }
-    };
-
     const formatTime = (timestamp) => {
       if (!timestamp) return "N/A";
       try {
@@ -347,22 +326,19 @@ export default {
         );
       }
 
-      const hasValidPositions = isValidNumber(payload.entry) && 
-                                isValidNumber(payload.sl) && 
-                                isValidNumber(payload.tp1) && 
+      const hasValidPositions = isValidNumber(payload.entry) &&
+                                isValidNumber(payload.sl) &&
+                                isValidNumber(payload.tp1) &&
                                 isValidNumber(payload.tp2);
-      
-      const withinTradingHours = isWithinTradingHours(payload.time);
-      
-      if (!hasValidPositions || !withinTradingHours) {
+
+      if (!hasValidPositions) {
         return new Response(
-          JSON.stringify({ 
-            status: "rejected", 
-            reason: !hasValidPositions ? "Invalid position values" : "Outside trading hours (9:34 AM - 12:00 PM EST)",
+          JSON.stringify({
+            status: "rejected",
+            reason: "Invalid position values",
             hasValidPositions,
-            withinTradingHours,
             receivedValues: { entry: payload.entry, sl: payload.sl, tp1: payload.tp1, tp2: payload.tp2 }
-          }), 
+          }),
           { status: 200, headers: { "Content-Type": "application/json" } }
         );
       }
