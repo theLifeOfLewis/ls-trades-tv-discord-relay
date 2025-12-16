@@ -386,10 +386,9 @@ export default {
     const symbolLine = tf ? `${symbol} ${tf}m` : symbol;
 
     // Handle trade closure (SL, TP2, or partial TP1/BE)
-    const isFullClose = type === "LONG_SL" || type === "SHORT_SL" || 
+    const isFullClose = type === "LONG_SL" || type === "SHORT_SL" ||
                         type === "LONG_TP2" || type === "SHORT_TP2";
-    const isPartialClose = type === "LONG_TP1" || type === "SHORT_TP1" ||
-                           type === "LONG_BE" || type === "SHORT_BE";
+    const isPartialClose = type === "LONG_TP1" || type === "SHORT_TP1";
     
     if (isFullClose && tradeId) {
       await deleteTrade(env, tradeId);
@@ -433,17 +432,6 @@ export default {
           `TP2: ${tp2}`
         ].join("\n");
         embeds = [{ image: { url: SELL_IMAGE_URL } }];
-        break;
-      case "LONG_BE":
-      case "SHORT_BE":
-        content = [
-          "**Trade Update: TP1 HIT / BE**",
-          `Trade ID: ${tradeId}`,
-          symbolLine,
-          `Time: ${time}`,
-          `Price: ${price}`,
-          "TP1 Smashed! 🔥 SL moved to entry. Partials secured. 💰"
-        ].join("\n");
         break;
       case "LONG_TP1":
       case "SHORT_TP1":
