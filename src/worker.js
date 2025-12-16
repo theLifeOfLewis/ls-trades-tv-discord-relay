@@ -457,13 +457,17 @@ export default {
         break;
       case "LONG_SL":
       case "SHORT_SL":
+        // Check if this is BE stop (after TP1) or full SL
+        const isBEStop = existingTrade && existingTrade.partialClosed;
+        const slMessage = isBEStop ? "Trade Closed at BE 🛑" : "Trade invalidated. 🛑";
+
         content = [
           "**Trade Update: SL HIT**",
           `Trade ID: ${tradeId}`,
           symbolLine,
           `Time: ${time}`,
           `Price: ${price}`,
-          "Trade invalidated. 🛑"
+          slMessage
         ].join("\n");
         break;
       default:
