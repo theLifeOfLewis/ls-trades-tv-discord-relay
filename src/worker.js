@@ -470,6 +470,54 @@ export default {
           slMessage
         ].join("\n");
         break;
+      case "NY_AM_BULLISH":
+        content = [
+          "**NY Opening Bias: BULLISH** 🟢",
+          "Good Morning Trader, Expecting Longs during the New York AM Session",
+          "",
+          `Symbol: ${symbol}`,
+          `Timeframe: ${tf}m`,
+          `Time: ${time}`,
+          `Profile: ${payload.profile || 'N/A'}`
+        ].join("\n");
+        console.log(`✅ Sent NY_AM_BULLISH bias alert for ${symbol}`);
+        break;
+      case "NY_AM_BEARISH":
+        content = [
+          "**NY Opening Bias: BEARISH** 🔴",
+          "Good Morning Trader, Expecting Shorts during the New York AM Session",
+          "",
+          `Symbol: ${symbol}`,
+          `Timeframe: ${tf}m`,
+          `Time: ${time}`,
+          `Profile: ${payload.profile || 'N/A'}`
+        ].join("\n");
+        console.log(`✅ Sent NY_AM_BEARISH bias alert for ${symbol}`);
+        break;
+      case "BIAS_FLIP_BULLISH":
+        content = [
+          "**Bias Update: Now BULLISH** 🟢⚡",
+          "Expecting a Bullish move now.",
+          "",
+          `Symbol: ${symbol}`,
+          `Timeframe: ${tf}m`,
+          `Time: ${time}`,
+          `Profile: ${payload.profile || 'N/A'}`
+        ].join("\n");
+        console.log(`✅ Sent BIAS_FLIP_BULLISH alert for ${symbol}`);
+        break;
+      case "BIAS_FLIP_BEARISH":
+        content = [
+          "**Bias Update: Now BEARISH** 🔴⚡",
+          "Expecting a Bearish move now.",
+          "",
+          `Symbol: ${symbol}`,
+          `Timeframe: ${tf}m`,
+          `Time: ${time}`,
+          `Profile: ${payload.profile || 'N/A'}`
+        ].join("\n");
+        console.log(`✅ Sent BIAS_FLIP_BEARISH alert for ${symbol}`);
+        break;
       default:
         // Log unknown alert types for debugging
         console.warn("Unknown alert type received:", type, "Payload:", payload);
