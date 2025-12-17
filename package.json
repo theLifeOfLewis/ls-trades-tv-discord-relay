@@ -11,5 +11,8 @@
   "license": "ISC",
   "devDependencies": {
     "wrangler": "^4.54.0"
+  },
+  "dependencies": {
+    "zod": "^4.2.1"
   }
 }

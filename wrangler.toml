@@ -17,10 +17,14 @@ new_sqlite_classes = ["TradeStorage"]
 # Set via: npx wrangler secret put DISCORD_WEBHOOK_URL
 # Or in Cloudflare dashboard: Workers & Pages → your-worker → Settings → Variables
 
-# Cron trigger for market close checks
-# 4:00 PM EST = 9:00 PM UTC (winter) / 8:00 PM UTC (summer with DST)
+# Cron triggers
+# Market close: 4:00 PM EST = 9:00 PM UTC (winter) / 8:00 PM UTC (summer with DST)
+# Cleanup: Daily at 1:00 AM UTC to remove old trades and signal markers
 [triggers]
-crons = ["0 21 * * 1-5"]  # Runs at 9 PM UTC, Monday-Friday
+crons = [
+  "0 21 * * 1-5",  # Market close at 9 PM UTC (Mon-Fri)
+  "0 1 * * *"      # Daily cleanup at 1 AM UTC
+]
 
 # Enable logging for debugging
 [observability]

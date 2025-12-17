@@ -22,6 +22,10 @@ export class TradeStorage {
           return await this.handleCleanup(request);
         case '/list':
           return await this.handleList(request);
+        case '/check-duplicate':
+          return await this.handleCheckDuplicate(request);
+        case '/create-if-none-active':
+          return await this.handleCreateIfNoneActive(request);
         default:
           return new Response('Not found', { status: 404 });
       }
@@ -69,22 +73,39 @@ export class TradeStorage {
   }
 
   async handleCleanup(request) {
-    // Remove trades older than 24 hours
+    // Remove trades older than 24 hours and signals older than 10 seconds
     const now = Date.now();
-    const maxAge = 24 * 60 * 60 * 1000; // 24 hours
-    
+    const tradeMaxAge = 24 * 60 * 60 * 1000; // 24 hours
+    const signalMaxAge = 10 * 1000; // 10 seconds
+
+    // Clean up old trades
     const allTrades = await this.state.storage.list({ prefix: 'trade:' });
-    let cleanedCount = 0;
-    
+    let cleanedTradeCount = 0;
+
     for (const [key, trade] of allTrades) {
-      if (trade.lastUpdate && (now - trade.lastUpdate > maxAge)) {
+      if (trade.lastUpdate && (now - trade.lastUpdate > tradeMaxAge)) {
         await this.state.storage.delete(key);
-        cleanedCount++;
+        cleanedTradeCount++;
       }
     }
-    
+
+    // Clean up old signal duplicate markers
+    const allSignals = await this.state.storage.list({ prefix: 'signal:' });
+    let cleanedSignalCount = 0;
+
+    for (const [key, timestamp] of allSignals) {
+      if (now - timestamp > signalMaxAge) {
+        await this.state.storage.delete(key);
+        cleanedSignalCount++;
+      }
+    }
+
     return new Response(
-      JSON.stringify({ success: true, cleanedCount }), 
+      JSON.stringify({
+        success: true,
+        cleanedTradeCount,
+        cleanedSignalCount
+      }),
       { headers: { 'Content-Type': 'application/json' } }
     );
   }
@@ -93,13 +114,77 @@ export class TradeStorage {
     const { prefix } = await request.json().catch(() => ({}));
     const allEntries = await this.state.storage.list({ prefix: prefix || '' });
     const entries = {};
-    
+
     for (const [key, value] of allEntries) {
       entries[key] = value;
     }
-    
+
     return new Response(
-      JSON.stringify({ entries }), 
+      JSON.stringify({ entries }),
+      { headers: { 'Content-Type': 'application/json' } }
+    );
+  }
+
+  async handleCheckDuplicate(request) {
+    const { signalKey, timestamp } = await request.json();
+    const WINDOW_MS = 5000; // 5 second duplicate window
+
+    // Atomic check-and-set for duplicate detection
+    const storageKey = `signal:${signalKey}`;
+    const existing = await this.state.storage.get(storageKey);
+
+    if (existing && (timestamp - existing < WINDOW_MS)) {
+      return new Response(
+        JSON.stringify({ isDuplicate: true, lastSeen: existing }),
+        { headers: { 'Content-Type': 'application/json' } }
+      );
+    }
+
+    // Store with auto-expiry using alarm (Durable Objects don't support TTL directly)
+    // Instead, we'll rely on cleanup to remove old signals
+    await this.state.storage.put(storageKey, timestamp);
+
+    return new Response(
+      JSON.stringify({ isDuplicate: false }),
+      { headers: { 'Content-Type': 'application/json' } }
+    );
+  }
+
+  async handleCreateIfNoneActive(request) {
+    const { key, trade } = await request.json();
+
+    // Atomic check: Get all trades with prefix 'trade:'
+    const allTrades = await this.state.storage.list({ prefix: 'trade:' });
+    const activeTrades = [];
+
+    for (const [k, v] of allTrades) {
+      // Only consider trades that aren't marked as closed
+      if (!v.closed) {
+        activeTrades.push({ key: k, trade: v });
+      }
+    }
+
+    if (activeTrades.length > 0) {
+      const firstActive = activeTrades[0];
+      return new Response(
+        JSON.stringify({
+          success: false,
+          reason: 'active_trade_exists',
+          activeTrade: {
+            key: firstActive.key.replace('trade:', ''),
+            type: firstActive.trade.type,
+            symbol: firstActive.trade.symbol,
+            tf: firstActive.trade.tf
+          }
+        }),
+        { headers: { 'Content-Type': 'application/json' } }
+      );
+    }
+
+    // No active trade exists, create atomically
+    await this.state.storage.put(key, trade);
+    return new Response(
+      JSON.stringify({ success: true }),
       { headers: { 'Content-Type': 'application/json' } }
     );
   }
