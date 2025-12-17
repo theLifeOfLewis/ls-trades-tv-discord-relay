@@ -8,6 +8,7 @@ import { z } from 'zod';
 // Schema definitions for webhook payloads
 const BaseSchema = z.object({
   type: z.string(),
+  secret: z.string(),  // Required webhook secret for authentication
   symbol: z.string().optional(),
   tf: z.string().optional(),
   time: z.string().optional(),
@@ -28,7 +29,9 @@ const EntrySchema = BaseSchema.extend({
 });
 
 const ExitSchema = BaseSchema.extend({
-  type: z.enum(['LONG_TP1', 'SHORT_TP1', 'LONG_TP2', 'SHORT_TP2', 'LONG_SL', 'SHORT_SL']),
+  type: z.enum(['LONG_TP1', 'SHORT_TP1', 'LONG_TP2', 'SHORT_TP2', 'LONG_TP3', 'SHORT_TP3', 'LONG_SL', 'SHORT_SL']),
+  symbol: z.string().optional(),
+  tf: z.string().optional(),
   tradeId: z.string(),
   price: z.string().optional(),
   time: z.string().optional()
@@ -199,7 +202,14 @@ export default {
       return;
     }
 
-    // Handle market close cron (9 PM UTC = 4 PM EST)
+    // Handle market close cron (8 PM UTC for EDT, 9 PM UTC for EST = 4 PM ET)
+    const isMarketClose = cronType === "0 20 * * 1-5" || cronType === "0 21 * * 1-5";
+    if (!isMarketClose) {
+      console.warn(`Unknown cron type: ${cronType}`);
+      return;
+    }
+
+    console.log(`Market close triggered by cron: ${cronType}`);
     const webhookUrl = env.DISCORD_WEBHOOK_URL;
     if (!webhookUrl) {
       console.warn("No Discord webhook URL configured for market close");
@@ -345,6 +355,18 @@ export default {
       } catch (e) {
         return jsonResponse({ status: 'rejected', reason: 'Invalid JSON', rawBody, error: String(e) }, 400);
       }
+    }
+
+    // Validate webhook secret for authentication
+    const expectedSecret = env.WEBHOOK_SECRET;
+    if (!expectedSecret) {
+      console.error("WEBHOOK_SECRET not configured in environment");
+      return jsonResponse({ status: 'rejected', reason: 'Server configuration error' }, 500);
+    }
+
+    if (!payload.secret || payload.secret !== expectedSecret) {
+      console.warn("Invalid or missing webhook secret");
+      return jsonResponse({ status: 'rejected', reason: 'Unauthorized: Invalid webhook secret' }, 401);
     }
 
     // Log incoming hits for observability: raw body, headers, and received UTC timestamp
@@ -552,9 +574,10 @@ export default {
 
     const symbolLine = tf ? `${symbol} ${tf}m` : symbol;
 
-    // Handle trade closure (SL, TP2, or partial TP1/BE)
+    // Handle trade closure (SL, TP2, TP3, or partial TP1/BE)
     const isFullClose = type === "LONG_SL" || type === "SHORT_SL" ||
-                        type === "LONG_TP2" || type === "SHORT_TP2";
+                        type === "LONG_TP2" || type === "SHORT_TP2" ||
+                        type === "LONG_TP3" || type === "SHORT_TP3";
     const isPartialClose = type === "LONG_TP1" || type === "SHORT_TP1";
     
     if (isFullClose && tradeId) {
@@ -654,7 +677,18 @@ export default {
           symbolLine,
           `Time: ${time}`,
           `Price: ${price}`,
-          "TP2 Smashed! 🔥🔥 Trade fully closed. 💰"
+          "TP2 Smashed! 🔥🔥 💰"
+        ].join("\n");
+        break;
+      case "LONG_TP3":
+      case "SHORT_TP3":
+        content = [
+          "**Trade Update: TP3 HIT**",
+          `Trade ID: ${tradeId}`,
+          symbolLine,
+          `Time: ${time}`,
+          `Price: ${price}`,
+          "TP3 DEMOLISHED! 🔥🔥🔥 Maximum profit secured! 💰💰💰"
         ].join("\n");
         break;
       case "LONG_SL":

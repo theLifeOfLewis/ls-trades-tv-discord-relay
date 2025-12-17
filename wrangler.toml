@@ -18,11 +18,12 @@ new_sqlite_classes = ["TradeStorage"]
 # Or in Cloudflare dashboard: Workers & Pages → your-worker → Settings → Variables
 
 # Cron triggers
-# Market close: 4:00 PM EST = 9:00 PM UTC (winter) / 8:00 PM UTC (summer with DST)
+# Market close: 4:00 PM EST (Nov-Mar) = 9:00 PM UTC / 4:00 PM EDT (Mar-Nov) = 8:00 PM UTC
 # Cleanup: Daily at 1:00 AM UTC to remove old trades and signal markers
 [triggers]
 crons = [
-  "0 21 * * 1-5",  # Market close at 9 PM UTC (Mon-Fri)
+  "0 20 * * 1-5",  # Market close at 8 PM UTC for EDT (Mar-Nov) - Mon-Fri
+  "0 21 * * 1-5",  # Market close at 9 PM UTC for EST (Nov-Mar) - Mon-Fri
   "0 1 * * *"      # Daily cleanup at 1 AM UTC
 ]
 
