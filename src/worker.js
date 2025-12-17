@@ -626,6 +626,7 @@ export default {
     let symbol = scrub(payload.symbol) || "UNKNOWN";
     let tf = scrub(payload.tf);
     const isEntrySignal = type === "LONG_ENTRY" || type === "SHORT_ENTRY";
+    const isBiasSignal = type === "NY_AM_BULLISH" || type === "NY_AM_BEARISH" || type === "BIAS_FLIP_BULLISH" || type === "BIAS_FLIP_BEARISH";
     
     // For non-entry signals, we'll get symbol/tf from the trade later
     // Time: prefer the TradingView-provided time when present for all signal types
@@ -713,9 +714,9 @@ export default {
       }
     }
 
-    // Validate trade exists for non-entry signals
+    // Validate trade exists for non-entry signals (but skip bias signals which don't need trades)
     let existingTrade = null;
-    if (!isEntrySignal && type !== "UNKNOWN") {
+    if (!isEntrySignal && !isBiasSignal && type !== "UNKNOWN") {
       // For TP/SL alerts, verify the trade exists
       existingTrade = await getTrade(env, tradeId);
       if (!existingTrade) {
