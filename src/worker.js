@@ -182,6 +182,184 @@ async function sendDiscordMessageWithRetry(webhookUrl, payload, maxRetries = 3) 
   return { success: false, error: lastError?.message || 'Unknown error' };
 }
 
+async function sendTelegramMessageWithRetry(botToken, chatId, text, parseMode = 'HTML', maxRetries = 3) {
+  if (!botToken || !chatId) {
+    console.warn('Telegram not configured: missing bot token or chat ID');
+    return { success: false, error: 'Telegram not configured' };
+  }
+
+  const url = `https://api.telegram.org/bot${botToken}/sendMessage`;
+  let lastError;
+
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          chat_id: chatId,
+          text: text,
+          parse_mode: parseMode,
+          disable_web_page_preview: true
+        })
+      });
+
+      if (response.ok) {
+        console.log(`Telegram message sent successfully (attempt ${attempt}/${maxRetries})`);
+        return { success: true, attempt };
+      }
+
+      const responseData = await response.json();
+
+      // Non-retryable errors (4xx except rate limits)
+      if (response.status >= 400 && response.status < 500 && response.status !== 429) {
+        throw new Error(`Telegram returned ${response.status}: ${responseData.description || 'Unknown error'}`);
+      }
+
+      lastError = new Error(`Telegram returned ${response.status}: ${responseData.description || 'Unknown error'}`);
+      console.warn(`Telegram attempt ${attempt}/${maxRetries} failed: ${response.status}`);
+    } catch (error) {
+      lastError = error;
+      console.error(`Telegram attempt ${attempt}/${maxRetries} failed:`, error.message);
+    }
+
+    // Wait before retry (exponential backoff: 1s, 2s, 4s)
+    if (attempt < maxRetries) {
+      const delayMs = 1000 * Math.pow(2, attempt - 1);
+      console.log(`Retrying in ${delayMs}ms...`);
+      await new Promise(resolve => setTimeout(resolve, delayMs));
+    }
+  }
+
+  console.error(`All ${maxRetries} Telegram attempts failed:`, lastError?.message);
+  return { success: false, error: lastError?.message || 'Unknown error' };
+}
+
+function formatTelegramMessage(type, payload) {
+  const { symbol, tf, entry, sl, tp1, tp2, price, tradeId, time, grade, profile } = payload;
+
+  const symbolLine = tf ? `${symbol} ${tf}m` : symbol;
+
+  // Grade emoji mapping
+  const gradeEmoji = {
+    'A': '⭐',
+    'A+': '⭐⭐',
+    'A++': '⭐⭐⭐'
+  };
+
+  switch (type) {
+    case 'LONG_ENTRY':
+      let longMsg = `🟢 <b>BUY ${symbol} NOW</b>\n`;
+      longMsg += `═══════════════════════\n`;
+      longMsg += `🆔 Trade ID: ${tradeId}\n`;
+      longMsg += `📊 ${symbolLine}\n`;
+      longMsg += `🕐 ${time}\n`;
+      if (grade) {
+        longMsg += `${gradeEmoji[grade] || '⭐'} Grade: <b>${grade}</b>\n`;
+      }
+      longMsg += `\n`;
+      longMsg += `📈 Entry: <code>${entry}</code>\n`;
+      longMsg += `🛑 SL: <code>${sl}</code>\n`;
+      longMsg += `🎯 TP1: <code>${tp1}</code>\n`;
+      longMsg += `🎯 TP2: <code>${tp2}</code>`;
+      return longMsg;
+
+    case 'SHORT_ENTRY':
+      let shortMsg = `🔴 <b>SELL ${symbol} NOW</b>\n`;
+      shortMsg += `═══════════════════════\n`;
+      shortMsg += `🆔 Trade ID: ${tradeId}\n`;
+      shortMsg += `📊 ${symbolLine}\n`;
+      shortMsg += `🕐 ${time}\n`;
+      if (grade) {
+        shortMsg += `${gradeEmoji[grade] || '⭐'} Grade: <b>${grade}</b>\n`;
+      }
+      shortMsg += `\n`;
+      shortMsg += `📉 Entry: <code>${entry}</code>\n`;
+      shortMsg += `🛑 SL: <code>${sl}</code>\n`;
+      shortMsg += `🎯 TP1: <code>${tp1}</code>\n`;
+      shortMsg += `🎯 TP2: <code>${tp2}</code>`;
+      return shortMsg;
+
+    case 'LONG_TP1':
+    case 'SHORT_TP1':
+      return `✅ <b>TP1 HIT / BREAKEVEN</b>\n\n` +
+             `🆔 Trade ID: ${tradeId}\n` +
+             `📊 ${symbolLine}\n` +
+             `🕐 ${time}\n` +
+             `💰 Price: <code>${price}</code>\n\n` +
+             `TP1 Smashed! 🔥 SL moved to entry. Partials secured. 💰`;
+
+    case 'LONG_TP2':
+    case 'SHORT_TP2':
+      return `🎯 <b>TP2 HIT</b>\n\n` +
+             `🆔 Trade ID: ${tradeId}\n` +
+             `📊 ${symbolLine}\n` +
+             `🕐 ${time}\n` +
+             `💰 Price: <code>${price}</code>\n\n` +
+             `TP2 Smashed! 🔥🔥 💰`;
+
+    case 'LONG_TP3':
+    case 'SHORT_TP3':
+      return `💎 <b>TP3 HIT</b>\n\n` +
+             `🆔 Trade ID: ${tradeId}\n` +
+             `📊 ${symbolLine}\n` +
+             `🕐 ${time}\n` +
+             `💰 Price: <code>${price}</code>\n\n` +
+             `TP3 DEMOLISHED! 🔥🔥🔥 Maximum profit secured! 💰💰💰`;
+
+    case 'LONG_SL':
+    case 'SHORT_SL':
+      const isBEStop = payload.isBEStop || false;
+      const slMessage = isBEStop ? 'Trade Closed at BE 🛑' : 'Trade invalidated. 🛑';
+      return `🛑 <b>STOP LOSS HIT</b>\n\n` +
+             `🆔 Trade ID: ${tradeId}\n` +
+             `📊 ${symbolLine}\n` +
+             `🕐 ${time}\n` +
+             `💰 Price: <code>${price}</code>\n\n` +
+             slMessage;
+
+    case 'NY_AM_BULLISH':
+      return `📈 <b>NY OPENING BIAS: BULLISH</b> 🟢\n\n` +
+             `Good Morning Trader, Expecting Longs during the New York AM Session\n\n` +
+             `📊 Symbol: ${symbol}\n` +
+             `⏰ Timeframe: ${tf}m\n` +
+             `🕐 Time: ${time}\n` +
+             `📋 Profile: <code>${profile || 'N/A'}</code>`;
+
+    case 'NY_AM_BEARISH':
+      return `📉 <b>NY OPENING BIAS: BEARISH</b> 🔴\n\n` +
+             `Good Morning Trader, Expecting Shorts during the New York AM Session\n\n` +
+             `📊 Symbol: ${symbol}\n` +
+             `⏰ Timeframe: ${tf}m\n` +
+             `🕐 Time: ${time}\n` +
+             `📋 Profile: <code>${profile || 'N/A'}</code>`;
+
+    case 'BIAS_FLIP_BULLISH':
+      return `⚡ <b>BIAS UPDATE: NOW BULLISH</b> 🟢\n\n` +
+             `Expecting a Bullish move now.\n\n` +
+             `📊 Symbol: ${symbol}\n` +
+             `⏰ Timeframe: ${tf}m\n` +
+             `🕐 Time: ${time}\n` +
+             `📋 Profile: <code>${profile || 'N/A'}</code>`;
+
+    case 'BIAS_FLIP_BEARISH':
+      return `⚡ <b>BIAS UPDATE: NOW BEARISH</b> 🔴\n\n` +
+             `Expecting a Bearish move now.\n\n` +
+             `📊 Symbol: ${symbol}\n` +
+             `⏰ Timeframe: ${tf}m\n` +
+             `🕐 Time: ${time}\n` +
+             `📋 Profile: <code>${profile || 'N/A'}</code>`;
+
+    default:
+      return `⚠️ <b>UNKNOWN ALERT TYPE</b>\n\n` +
+             `Type: ${type}\n` +
+             `Trade ID: ${tradeId}\n` +
+             `Symbol: ${symbolLine}\n` +
+             `Time: ${time}\n\n` +
+             `Please check indicator configuration.`;
+  }
+}
+
 // Helper for consistent JSON responses
 function jsonResponse(obj, status = 200) {
   return new Response(JSON.stringify(obj), {
@@ -774,15 +952,50 @@ export default {
     }
 
     // Send to Discord with retry logic
-    const result = await sendDiscordMessageWithRetry(webhookUrl, discordPayload);
+    const discordResult = await sendDiscordMessageWithRetry(webhookUrl, discordPayload);
 
-    if (!result.success) {
-      console.error("Failed to send Discord message after all retries:", result.error);
+    if (!discordResult.success) {
+      console.error("Failed to send Discord message after all retries:", discordResult.error);
+    }
+
+    // Send to Telegram (don't fail if Telegram is not configured)
+    const telegramBotToken = env.TELEGRAM_BOT_TOKEN;
+    const telegramChatId = env.TELEGRAM_CHAT_ID;
+
+    let telegramResult = { success: false, error: 'Not configured' };
+    if (telegramBotToken && telegramChatId) {
+      // Build Telegram-specific payload with BE stop flag for SL messages
+      const telegramPayload = {
+        ...payload,
+        symbol,
+        tf,
+        entry,
+        sl,
+        tp1,
+        tp2,
+        price,
+        tradeId,
+        time,
+        grade,
+        isBEStop: existingTrade?.partialClosed || false
+      };
+
+      const telegramMessage = formatTelegramMessage(type, telegramPayload);
+      telegramResult = await sendTelegramMessageWithRetry(telegramBotToken, telegramChatId, telegramMessage);
+
+      if (!telegramResult.success) {
+        console.error("Failed to send Telegram message after all retries:", telegramResult.error);
+      }
+    }
+
+    // Return error only if Discord failed (Telegram is optional)
+    if (!discordResult.success) {
       return new Response(
         JSON.stringify({
           status: "error",
           reason: "Failed to send Discord message after retries",
-          error: result.error
+          discord: discordResult.error,
+          telegram: telegramResult.error
         }),
         { status: 502, headers: { "Content-Type": "application/json" } }
       );
@@ -790,14 +1003,20 @@ export default {
 
     // Success response with confirmation
     const finalActiveTrades = await getActiveTrades(env);
+    const successMessage = telegramResult.success
+      ? "Alert sent to Discord and Telegram"
+      : "Alert sent to Discord (Telegram not configured or failed)";
+
     return new Response(
-      JSON.stringify({ 
-        status: "success", 
+      JSON.stringify({
+        status: "success",
         type,
         tradeId,
         activeTradesCount: Object.keys(finalActiveTrades).length,
-        message: "Alert sent to Discord"
-      }), 
+        message: successMessage,
+        discord: discordResult.success,
+        telegram: telegramResult.success
+      }),
       { status: 200, headers: { "Content-Type": "application/json" } }
     );
   }
