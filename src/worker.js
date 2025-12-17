@@ -598,7 +598,7 @@ export default {
       try {
         const date = new Date(timestamp);
         if (isNaN(date.getTime())) return withNA(timestamp);
-        
+
         const options = {
           timeZone: 'America/New_York',
           weekday: 'short',
@@ -609,9 +609,13 @@ export default {
           minute: '2-digit',
           hour12: true
         };
-        
+
         const formatted = new Intl.DateTimeFormat('en-US', options).format(date);
-        return `${formatted} EST`;
+        // Remove comma after day and convert AM/PM to lowercase
+        // Original: "Thu, Dec 17, 2025, 9:30 AM"
+        // Target: "Thu, Dec 17, 2025 9:30am EST"
+        const cleaned = formatted.replace(/,\s+(\d+:\d+)/, ' $1').replace(/\s+(AM|PM)/, (_, p1) => p1.toLowerCase());
+        return `${cleaned} EST`;
       } catch (e) {
         return withNA(timestamp);
       }
