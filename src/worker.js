@@ -236,7 +236,7 @@ async function sendTelegramMessageWithRetry(botToken, chatId, text, parseMode = 
 }
 
 function formatTelegramMessage(type, payload) {
-  const { symbol, tf, entry, sl, tp1, tp2, price, tradeId, time, grade, profile } = payload;
+  const { symbol, tf, entry, sl, tp1, tp2, price, tradeId, time, dateOnly, grade, profile } = payload;
 
   const symbolLine = tf ? `${symbol} ${tf}m` : symbol;
 
@@ -987,6 +987,7 @@ export default {
         price,
         tradeId,
         time,
+        dateOnly,
         grade,
         isBEStop: existingTrade?.partialClosed || false
       };
