@@ -320,35 +320,27 @@ function formatTelegramMessage(type, payload) {
 
     case 'NY_AM_BULLISH':
       return `📈 <b>NY OPENING BIAS: BULLISH</b> 🟢\n\n` +
-             `Good Morning Trader, Expecting Longs during the New York AM Session\n\n` +
+             `Good Morning Traders, Expecting Longs during the New York AM Session\n\n` +
              `📊 Symbol: ${symbol}\n` +
-             `⏰ Timeframe: ${tf}m\n` +
-             `🕐 Time: ${time}\n` +
-             `📋 Profile: <code>${profile || 'N/A'}</code>`;
+             `📅 Date: ${dateOnly}`;
 
     case 'NY_AM_BEARISH':
       return `📉 <b>NY OPENING BIAS: BEARISH</b> 🔴\n\n` +
-             `Good Morning Trader, Expecting Shorts during the New York AM Session\n\n` +
+             `Good Morning Traders, Expecting Shorts during the New York AM Session\n\n` +
              `📊 Symbol: ${symbol}\n` +
-             `⏰ Timeframe: ${tf}m\n` +
-             `🕐 Time: ${time}\n` +
-             `📋 Profile: <code>${profile || 'N/A'}</code>`;
+             `📅 Date: ${dateOnly}`;
 
     case 'BIAS_FLIP_BULLISH':
       return `⚡ <b>BIAS UPDATE: NOW BULLISH</b> 🟢\n\n` +
              `Expecting a Bullish move now.\n\n` +
              `📊 Symbol: ${symbol}\n` +
-             `⏰ Timeframe: ${tf}m\n` +
-             `🕐 Time: ${time}\n` +
-             `📋 Profile: <code>${profile || 'N/A'}</code>`;
+             `📅 Date: ${dateOnly}`;
 
     case 'BIAS_FLIP_BEARISH':
       return `⚡ <b>BIAS UPDATE: NOW BEARISH</b> 🔴\n\n` +
              `Expecting a Bearish move now.\n\n` +
              `📊 Symbol: ${symbol}\n` +
-             `⏰ Timeframe: ${tf}m\n` +
-             `🕐 Time: ${time}\n` +
-             `📋 Profile: <code>${profile || 'N/A'}</code>`;
+             `📅 Date: ${dateOnly}`;
 
     default:
       return `⚠️ <b>UNKNOWN ALERT TYPE</b>\n\n` +
@@ -596,7 +588,7 @@ export default {
     const formatTime = (timestamp) => {
       if (!timestamp) return "N/A";
       try {
-        const date = new Date(timestamp);
+        const date = new Date(Number(timestamp));
         if (isNaN(date.getTime())) return withNA(timestamp);
 
         const options = {
@@ -621,6 +613,27 @@ export default {
       }
     };
 
+    const formatDateOnly = (timestamp) => {
+      if (!timestamp) return "N/A";
+      try {
+        const date = new Date(Number(timestamp));
+        if (isNaN(date.getTime())) return withNA(timestamp);
+
+        const options = {
+          timeZone: 'America/New_York',
+          weekday: 'short',
+          year: 'numeric',
+          month: 'short',
+          day: 'numeric'
+        };
+
+        // Format: "Tue, Dec 17, 2025"
+        return new Intl.DateTimeFormat('en-US', options).format(date);
+      } catch (e) {
+        return withNA(timestamp);
+      }
+    };
+
     const typeRaw = scrub(payload.type).toUpperCase();
     const type = typeRaw || "UNKNOWN";
     let symbol = scrub(payload.symbol) || "UNKNOWN";
@@ -631,6 +644,7 @@ export default {
     // For non-entry signals, we'll get symbol/tf from the trade later
     // Time: prefer the TradingView-provided time when present for all signal types
     const time = (payload && payload.time) ? formatTime(payload.time) : formatTime(new Date().toISOString());
+    const dateOnly = (payload && payload.time) ? formatDateOnly(payload.time) : formatDateOnly(new Date().toISOString());
     const entry = withNA(payload.entry);
     const sl = withNA(payload.sl);
     const tp1 = withNA(payload.tp1);
@@ -892,24 +906,20 @@ export default {
       case "NY_AM_BULLISH":
         content = [
           "**NY Opening Bias: BULLISH** 🟢",
-          "Good Morning Trader, Expecting Longs during the New York AM Session",
+          "Good Morning Traders, Expecting Longs during the New York AM Session",
           "",
-          `Symbol: ${symbol}`,
-          `Timeframe: ${tf}m`,
-          `Time: ${time}`,
-          `Profile: ${payload.profile || 'N/A'}`
+          `📊 Symbol: ${symbol}`,
+          `📅 Date: ${dateOnly}`
         ].join("\n");
         console.log(`✅ Sent NY_AM_BULLISH bias alert for ${symbol}`);
         break;
       case "NY_AM_BEARISH":
         content = [
           "**NY Opening Bias: BEARISH** 🔴",
-          "Good Morning Trader, Expecting Shorts during the New York AM Session",
+          "Good Morning Traders, Expecting Shorts during the New York AM Session",
           "",
-          `Symbol: ${symbol}`,
-          `Timeframe: ${tf}m`,
-          `Time: ${time}`,
-          `Profile: ${payload.profile || 'N/A'}`
+          `📊 Symbol: ${symbol}`,
+          `📅 Date: ${dateOnly}`
         ].join("\n");
         console.log(`✅ Sent NY_AM_BEARISH bias alert for ${symbol}`);
         break;
@@ -918,10 +928,8 @@ export default {
           "**Bias Update: Now BULLISH** 🟢⚡",
           "Expecting a Bullish move now.",
           "",
-          `Symbol: ${symbol}`,
-          `Timeframe: ${tf}m`,
-          `Time: ${time}`,
-          `Profile: ${payload.profile || 'N/A'}`
+          `📊 Symbol: ${symbol}`,
+          `📅 Date: ${dateOnly}`
         ].join("\n");
         console.log(`✅ Sent BIAS_FLIP_BULLISH alert for ${symbol}`);
         break;
@@ -930,10 +938,8 @@ export default {
           "**Bias Update: Now BEARISH** 🔴⚡",
           "Expecting a Bearish move now.",
           "",
-          `Symbol: ${symbol}`,
-          `Timeframe: ${tf}m`,
-          `Time: ${time}`,
-          `Profile: ${payload.profile || 'N/A'}`
+          `📊 Symbol: ${symbol}`,
+          `📅 Date: ${dateOnly}`
         ].join("\n");
         console.log(`✅ Sent BIAS_FLIP_BEARISH alert for ${symbol}`);
         break;
