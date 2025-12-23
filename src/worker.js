@@ -105,6 +105,151 @@ async function cleanupOldTrades(env) {
   return await response.json();
 }
 
+// Helper to calculate points based on trade direction
+function calculatePoints(tradeType, entryPrice, exitPrice) {
+  const entry = parseFloat(entryPrice);
+  const exit = parseFloat(exitPrice);
+
+  if (isNaN(entry) || isNaN(exit)) {
+    return 0;
+  }
+
+  // For LONG: points = exit - entry
+  // For SHORT: points = entry - exit
+  if (tradeType === 'LONG') {
+    return exit - entry;
+  } else if (tradeType === 'SHORT') {
+    return entry - exit;
+  }
+
+  return 0;
+}
+
+async function archiveTrade(env, tradeId, tradeData, exitData) {
+  const stub = getTradeStorage(env);
+
+  // Create archive key with date for easy querying: archive:YYYYMMDD:tradeId
+  const exitDate = new Date(exitData.exitTime || Date.now());
+  const dateStr = exitDate.toISOString().split('T')[0].replace(/-/g, ''); // YYYYMMDD format
+  const archiveKey = `archive:${dateStr}:${tradeId}`;
+
+  // Build archive object
+  const archivedTrade = {
+    ...tradeData,
+    exitType: exitData.exitType,
+    exitPrice: exitData.exitPrice,
+    exitTime: exitData.exitTime,
+    points: exitData.points,
+    isWin: exitData.isWin,
+    archivedAt: Date.now()
+  };
+
+  await stub.fetch('https://fake-host/set', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ key: archiveKey, value: archivedTrade })
+  });
+
+  return archiveKey;
+}
+
+async function getDailyArchives(env, dateStr) {
+  const stub = getTradeStorage(env);
+  const response = await stub.fetch('https://fake-host/list', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ prefix: `archive:${dateStr}:` })
+  });
+  const { entries } = await response.json();
+  return entries;
+}
+
+function calculateDailySummary(archivedTrades) {
+  const trades = Object.values(archivedTrades);
+
+  if (trades.length === 0) {
+    return {
+      totalTrades: 0,
+      wins: 0,
+      losses: 0,
+      totalPoints: 0
+    };
+  }
+
+  const wins = trades.filter(t => t.isWin).length;
+  const losses = trades.filter(t => !t.isWin).length;
+  const totalPoints = trades.reduce((sum, t) => sum + (t.points || 0), 0);
+
+  return {
+    totalTrades: trades.length,
+    wins,
+    losses,
+    totalPoints: totalPoints
+  };
+}
+
+function getWeekDateRange(currentDate) {
+  // Get Monday of current week (week starts Monday, ends Friday)
+  const etDate = new Date(currentDate.toLocaleString('en-US', { timeZone: 'America/New_York' }));
+  const dayOfWeek = etDate.getDay(); // 0 = Sunday, 1 = Monday, ..., 5 = Friday
+
+  // Calculate days to subtract to get to Monday
+  const daysToMonday = (dayOfWeek === 0) ? 6 : (dayOfWeek - 1);
+
+  const monday = new Date(etDate);
+  monday.setDate(monday.getDate() - daysToMonday);
+
+  const friday = new Date(monday);
+  friday.setDate(monday.getDate() + 4); // Friday is 4 days after Monday
+
+  // Format as YYYYMMDD
+  const formatDate = (date) => {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}${month}${day}`;
+  };
+
+  return {
+    start: formatDate(monday),
+    end: formatDate(friday),
+    mondayDate: monday,
+    fridayDate: friday
+  };
+}
+
+async function getWeeklyArchives(env, startDateStr, endDateStr) {
+  const stub = getTradeStorage(env);
+
+  // List all archives and filter by date range
+  const response = await stub.fetch('https://fake-host/list', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ prefix: 'archive:' })
+  });
+  const { entries } = await response.json();
+
+  // Filter trades within the date range
+  const weeklyTrades = {};
+  for (const [key, trade] of Object.entries(entries)) {
+    // Extract date from key: archive:YYYYMMDD:tradeId
+    const dateMatch = key.match(/^archive:(\d{8}):/);
+    if (dateMatch) {
+      const tradeDate = dateMatch[1];
+      if (tradeDate >= startDateStr && tradeDate <= endDateStr) {
+        weeklyTrades[key] = trade;
+      }
+    }
+  }
+
+  return weeklyTrades;
+}
+
+function calculateWeeklySummary(archivedTrades) {
+  // Same as daily summary, but labeled for weekly
+  return calculateDailySummary(archivedTrades);
+}
+
 async function checkDuplicate(env, signalKey, timestamp) {
   const stub = getTradeStorage(env);
   const response = await stub.fetch('https://fake-host/check-duplicate', {
@@ -139,6 +284,24 @@ function validateExitMatchesTrade(exitType, tradeType) {
   }
 
   return { valid: true };
+}
+
+// Helper to format prices to 2 decimal places
+function formatPrice(value) {
+  if (value === null || value === undefined) return "N/A";
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (!trimmed || trimmed.toLowerCase() === "null" ||
+        trimmed.toLowerCase() === "undefined" || trimmed === "N/A") {
+      return "N/A";
+    }
+    const num = parseFloat(trimmed);
+    if (isNaN(num) || !isFinite(num)) return "N/A";
+    return num.toFixed(2);
+  }
+  const num = Number(value);
+  if (isNaN(num) || !isFinite(num)) return "N/A";
+  return num.toFixed(2);
 }
 
 async function sendDiscordMessageWithRetry(webhookUrl, payload, maxRetries = 3) {
@@ -179,6 +342,59 @@ async function sendDiscordMessageWithRetry(webhookUrl, payload, maxRetries = 3) 
   }
 
   console.error(`All ${maxRetries} Discord webhook attempts failed:`, lastError?.message);
+  return { success: false, error: lastError?.message || 'Unknown error' };
+}
+
+async function sendTelegramPhotoWithRetry(botToken, chatId, photoUrl, caption, parseMode = 'HTML', maxRetries = 3) {
+  if (!botToken || !chatId) {
+    console.warn('Telegram not configured: missing bot token or chat ID');
+    return { success: false, error: 'Telegram not configured' };
+  }
+
+  const url = `https://api.telegram.org/bot${botToken}/sendPhoto`;
+  let lastError;
+
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          chat_id: chatId,
+          photo: photoUrl,
+          caption: caption,
+          parse_mode: parseMode
+        })
+      });
+
+      if (response.ok) {
+        console.log(`Telegram photo sent successfully (attempt ${attempt}/${maxRetries})`);
+        return { success: true, attempt };
+      }
+
+      const responseData = await response.json();
+
+      // Non-retryable errors (4xx except rate limits)
+      if (response.status >= 400 && response.status < 500 && response.status !== 429) {
+        throw new Error(`Telegram returned ${response.status}: ${responseData.description || 'Unknown error'}`);
+      }
+
+      lastError = new Error(`Telegram returned ${response.status}: ${responseData.description || 'Unknown error'}`);
+      console.warn(`Telegram photo attempt ${attempt}/${maxRetries} failed: ${response.status}`);
+    } catch (error) {
+      lastError = error;
+      console.error(`Telegram photo attempt ${attempt}/${maxRetries} failed:`, error.message);
+    }
+
+    // Wait before retry (exponential backoff: 1s, 2s, 4s)
+    if (attempt < maxRetries) {
+      const delayMs = 1000 * Math.pow(2, attempt - 1);
+      console.log(`Retrying in ${delayMs}ms...`);
+      await new Promise(resolve => setTimeout(resolve, delayMs));
+    }
+  }
+
+  console.error(`All ${maxRetries} Telegram photo attempts failed:`, lastError?.message);
   return { success: false, error: lastError?.message || 'Unknown error' };
 }
 
@@ -258,10 +474,10 @@ function formatTelegramMessage(type, payload) {
         longMsg += `${gradeEmoji[grade] || '⭐'} Grade: <b>${grade}</b>\n`;
       }
       longMsg += `\n`;
-      longMsg += `📈 Entry: <code>${entry}</code>\n`;
-      longMsg += `🛑 SL: <code>${sl}</code>\n`;
-      longMsg += `🎯 TP1: <code>${tp1}</code>\n`;
-      longMsg += `🎯 TP2: <code>${tp2}</code>`;
+      longMsg += `📈 Entry: <code>${formatPrice(entry)}</code>\n`;
+      longMsg += `🛑 SL: <code>${formatPrice(sl)}</code>\n`;
+      longMsg += `🎯 TP1: <code>${formatPrice(tp1)}</code>\n`;
+      longMsg += `🎯 TP2: <code>${formatPrice(tp2)}</code>`;
       return longMsg;
 
     case 'SHORT_ENTRY':
@@ -274,10 +490,10 @@ function formatTelegramMessage(type, payload) {
         shortMsg += `${gradeEmoji[grade] || '⭐'} Grade: <b>${grade}</b>\n`;
       }
       shortMsg += `\n`;
-      shortMsg += `📉 Entry: <code>${entry}</code>\n`;
-      shortMsg += `🛑 SL: <code>${sl}</code>\n`;
-      shortMsg += `🎯 TP1: <code>${tp1}</code>\n`;
-      shortMsg += `🎯 TP2: <code>${tp2}</code>`;
+      shortMsg += `📉 Entry: <code>${formatPrice(entry)}</code>\n`;
+      shortMsg += `🛑 SL: <code>${formatPrice(sl)}</code>\n`;
+      shortMsg += `🎯 TP1: <code>${formatPrice(tp1)}</code>\n`;
+      shortMsg += `🎯 TP2: <code>${formatPrice(tp2)}</code>`;
       return shortMsg;
 
     case 'LONG_TP1':
@@ -286,7 +502,7 @@ function formatTelegramMessage(type, payload) {
              `🆔 Trade ID: ${tradeId}\n` +
              `📊 ${symbolLine}\n` +
              `🕐 ${time}\n` +
-             `💰 Price: <code>${price}</code>\n\n` +
+             `💰 Price: <code>${formatPrice(price)}</code>\n\n` +
              `TP1 Smashed! 🔥 SL moved to entry. Partials secured. 💰`;
 
     case 'LONG_TP2':
@@ -295,7 +511,7 @@ function formatTelegramMessage(type, payload) {
              `🆔 Trade ID: ${tradeId}\n` +
              `📊 ${symbolLine}\n` +
              `🕐 ${time}\n` +
-             `💰 Price: <code>${price}</code>\n\n` +
+             `💰 Price: <code>${formatPrice(price)}</code>\n\n` +
              `TP2 Smashed! 🔥🔥 💰`;
 
     case 'LONG_TP3':
@@ -304,7 +520,7 @@ function formatTelegramMessage(type, payload) {
              `🆔 Trade ID: ${tradeId}\n` +
              `📊 ${symbolLine}\n` +
              `🕐 ${time}\n` +
-             `💰 Price: <code>${price}</code>\n\n` +
+             `💰 Price: <code>${formatPrice(price)}</code>\n\n` +
              `TP3 DEMOLISHED! 🔥🔥🔥 Maximum profit secured! 💰💰💰`;
 
     case 'LONG_SL':
@@ -315,7 +531,7 @@ function formatTelegramMessage(type, payload) {
              `🆔 Trade ID: ${tradeId}\n` +
              `📊 ${symbolLine}\n` +
              `🕐 ${time}\n` +
-             `💰 Price: <code>${price}</code>\n\n` +
+             `💰 Price: <code>${formatPrice(price)}</code>\n\n` +
              slMessage;
 
     case 'NY_AM_BULLISH':
@@ -386,6 +602,134 @@ export default {
       return;
     }
 
+    // Get today's date in YYYYMMDD format (ET timezone)
+    const now = new Date();
+    const etDate = new Date(now.toLocaleString('en-US', { timeZone: 'America/New_York' }));
+    const dateStr = etDate.toISOString().split('T')[0].replace(/-/g, '');
+
+    // Get daily archived trades for today
+    const archivedTrades = await getDailyArchives(env, dateStr);
+    const dailyStats = calculateDailySummary(archivedTrades);
+
+    // Send daily summary to Discord
+    if (dailyStats.totalTrades > 0) {
+      const summaryEmbed = {
+        title: '📊 End of Day Summary',
+        color: 0x00FF00, // Green
+        fields: [
+          { name: 'Total Trades', value: String(dailyStats.totalTrades), inline: true },
+          { name: 'Wins', value: String(dailyStats.wins), inline: true },
+          { name: 'Losses', value: String(dailyStats.losses), inline: true },
+          { name: 'Total Points', value: dailyStats.totalPoints.toFixed(2), inline: true }
+        ],
+        footer: { text: `Market Close - ${etDate.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })}` },
+        timestamp: new Date().toISOString()
+      };
+
+      const summaryPayload = {
+        content: '**End of Day Summary** 📈',
+        embeds: [summaryEmbed]
+      };
+
+      const summaryResult = await sendDiscordMessageWithRetry(webhookUrl, summaryPayload);
+      if (!summaryResult.success) {
+        console.error('Failed to send daily summary:', summaryResult.error);
+      }
+    } else {
+      console.log('No completed trades today - skipping daily summary');
+    }
+
+    // Send daily summary to Telegram if configured
+    const telegramBotToken = env.TELEGRAM_BOT_TOKEN;
+    const telegramChatId = env.TELEGRAM_CHAT_ID;
+
+    if (telegramBotToken && telegramChatId && dailyStats.totalTrades > 0) {
+      const telegramSummary = [
+        '📊 <b>End of Day Summary</b>',
+        '═══════════════════════',
+        `📅 ${etDate.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })}`,
+        '',
+        `📈 Total Trades: <b>${dailyStats.totalTrades}</b>`,
+        `✅ Wins: <b>${dailyStats.wins}</b>`,
+        `❌ Losses: <b>${dailyStats.losses}</b>`,
+        `💰 Total Points: <b>${dailyStats.totalPoints.toFixed(2)}</b>`
+      ].join('\n');
+
+      const telegramSummaryResult = await sendTelegramMessageWithRetry(
+        telegramBotToken,
+        telegramChatId,
+        telegramSummary
+      );
+
+      if (!telegramSummaryResult.success) {
+        console.error('Failed to send Telegram daily summary:', telegramSummaryResult.error);
+      }
+    }
+
+    // Check if today is Friday (day 5) - send weekly summary
+    const dayOfWeek = etDate.getDay();
+    if (dayOfWeek === 5) { // Friday
+      console.log('Friday market close - calculating weekly summary');
+
+      const weekRange = getWeekDateRange(now);
+      const weeklyTrades = await getWeeklyArchives(env, weekRange.start, weekRange.end);
+      const weeklyStats = calculateWeeklySummary(weeklyTrades);
+
+      if (weeklyStats.totalTrades > 0) {
+        // Send weekly summary to Discord
+        const weeklySummaryEmbed = {
+          title: '📅 End of Week Summary',
+          color: 0x0099FF, // Blue
+          fields: [
+            { name: 'Total Trades', value: String(weeklyStats.totalTrades), inline: true },
+            { name: 'Wins', value: String(weeklyStats.wins), inline: true },
+            { name: 'Losses', value: String(weeklyStats.losses), inline: true },
+            { name: 'Total Points', value: weeklyStats.totalPoints.toFixed(2), inline: true }
+          ],
+          footer: {
+            text: `Week: ${weekRange.mondayDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - ${weekRange.fridayDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`
+          },
+          timestamp: new Date().toISOString()
+        };
+
+        const weeklySummaryPayload = {
+          content: '**End of Week Summary** 📊',
+          embeds: [weeklySummaryEmbed]
+        };
+
+        const weeklyResult = await sendDiscordMessageWithRetry(webhookUrl, weeklySummaryPayload);
+        if (!weeklyResult.success) {
+          console.error('Failed to send weekly summary:', weeklyResult.error);
+        }
+
+        // Send weekly summary to Telegram if configured
+        if (telegramBotToken && telegramChatId) {
+          const telegramWeeklySummary = [
+            '📅 <b>End of Week Summary</b>',
+            '═══════════════════════',
+            `📆 Week: ${weekRange.mondayDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - ${weekRange.fridayDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`,
+            '',
+            `📈 Total Trades: <b>${weeklyStats.totalTrades}</b>`,
+            `✅ Wins: <b>${weeklyStats.wins}</b>`,
+            `❌ Losses: <b>${weeklyStats.losses}</b>`,
+            `💰 Total Points: <b>${weeklyStats.totalPoints.toFixed(2)}</b>`
+          ].join('\n');
+
+          const telegramWeeklyResult = await sendTelegramMessageWithRetry(
+            telegramBotToken,
+            telegramChatId,
+            telegramWeeklySummary
+          );
+
+          if (!telegramWeeklyResult.success) {
+            console.error('Failed to send Telegram weekly summary:', telegramWeeklyResult.error);
+          }
+        }
+      } else {
+        console.log('No completed trades this week - skipping weekly summary');
+      }
+    }
+
     // Get active trades from Durable Object
     const activeTrades = await getActiveTrades(env);
     const tradesList = Object.entries(activeTrades).map(([key, trade]) => ({
@@ -412,10 +756,10 @@ export default {
       const embeds = batch.map(trade => {
         const fields = [
           { name: 'Symbol', value: trade.symbol, inline: true },
-          { name: 'Entry', value: trade.entry, inline: true },
-          { name: 'TP1', value: trade.tp1, inline: true },
-          { name: 'TP2', value: trade.tp2, inline: true },
-          { name: 'SL', value: trade.sl, inline: true },
+          { name: 'Entry', value: formatPrice(trade.entry), inline: true },
+          { name: 'TP1', value: formatPrice(trade.tp1), inline: true },
+          { name: 'TP2', value: formatPrice(trade.tp2), inline: true },
+          { name: 'SL', value: formatPrice(trade.sl), inline: true },
           { name: 'Status', value: trade.partialClosed ? 'Partial Close' : 'Active', inline: true }
         ];
 
@@ -776,8 +1120,31 @@ export default {
                         type === "LONG_TP2" || type === "SHORT_TP2" ||
                         type === "LONG_TP3" || type === "SHORT_TP3";
     const isPartialClose = type === "LONG_TP1" || type === "SHORT_TP1";
-    
+
     if (isFullClose && tradeId) {
+      // Get trade data before deleting
+      const trade = await getTrade(env, tradeId);
+      if (trade) {
+        // Calculate points
+        const points = calculatePoints(trade.type, trade.entry, price);
+
+        // Determine if win or loss
+        // Win: TP1, TP2, TP3, or SL after TP1 (BE stop)
+        // Loss: SL without TP1 hit
+        const isBEStop = trade.partialClosed;
+        const isWin = type.includes('TP') || isBEStop;
+
+        // Archive the trade before deleting
+        await archiveTrade(env, tradeId, trade, {
+          exitType: type,
+          exitPrice: price,
+          exitTime: now,
+          points: points,
+          isWin: isWin
+        });
+      }
+
+      // Delete active trade
       await deleteTrade(env, tradeId);
     } else if (isPartialClose && tradeId) {
       // Keep trade active but mark partial closure
@@ -815,10 +1182,10 @@ export default {
           longLines.push(`Grade: ${grade}`);
         }
         longLines.push(
-          `Entry: ${entry}`,
-          `SL: ${sl}`,
-          `TP1: ${tp1}`,
-          `TP2: ${tp2}`
+          `Entry: ${formatPrice(entry)}`,
+          `SL: ${formatPrice(sl)}`,
+          `TP1: ${formatPrice(tp1)}`,
+          `TP2: ${formatPrice(tp2)}`
         );
         content = longLines.join("\n");
 
@@ -841,10 +1208,10 @@ export default {
           shortLines.push(`Grade: ${grade}`);
         }
         shortLines.push(
-          `Entry: ${entry}`,
-          `SL: ${sl}`,
-          `TP1: ${tp1}`,
-          `TP2: ${tp2}`
+          `Entry: ${formatPrice(entry)}`,
+          `SL: ${formatPrice(sl)}`,
+          `TP1: ${formatPrice(tp1)}`,
+          `TP2: ${formatPrice(tp2)}`
         );
         content = shortLines.join("\n");
 
@@ -862,7 +1229,7 @@ export default {
           `Trade ID: ${tradeId}`,
           symbolLine,
           `Time: ${time}`,
-          `Price: ${price}`,
+          `Price: ${formatPrice(price)}`,
           "TP1 Smashed! 🔥 SL moved to entry. Partials secured. 💰"
         ].join("\n");
         break;
@@ -873,7 +1240,7 @@ export default {
           `Trade ID: ${tradeId}`,
           symbolLine,
           `Time: ${time}`,
-          `Price: ${price}`,
+          `Price: ${formatPrice(price)}`,
           "TP2 Smashed! 🔥🔥 💰"
         ].join("\n");
         break;
@@ -884,7 +1251,7 @@ export default {
           `Trade ID: ${tradeId}`,
           symbolLine,
           `Time: ${time}`,
-          `Price: ${price}`,
+          `Price: ${formatPrice(price)}`,
           "TP3 DEMOLISHED! 🔥🔥🔥 Maximum profit secured! 💰💰💰"
         ].join("\n");
         break;
@@ -899,7 +1266,7 @@ export default {
           `Trade ID: ${tradeId}`,
           symbolLine,
           `Time: ${time}`,
-          `Price: ${price}`,
+          `Price: ${formatPrice(price)}`,
           slMessage
         ].join("\n");
         break;
@@ -993,7 +1360,32 @@ export default {
       };
 
       const telegramMessage = formatTelegramMessage(type, telegramPayload);
-      telegramResult = await sendTelegramMessageWithRetry(telegramBotToken, telegramChatId, telegramMessage);
+
+      // For entry signals, send as photo with caption
+      if (type === 'LONG_ENTRY') {
+        telegramResult = await sendTelegramPhotoWithRetry(
+          telegramBotToken,
+          telegramChatId,
+          BUY_IMAGE_URL,
+          telegramMessage,
+          'HTML'
+        );
+      } else if (type === 'SHORT_ENTRY') {
+        telegramResult = await sendTelegramPhotoWithRetry(
+          telegramBotToken,
+          telegramChatId,
+          SELL_IMAGE_URL,
+          telegramMessage,
+          'HTML'
+        );
+      } else {
+        // For all other signals (exits, bias), send as text message
+        telegramResult = await sendTelegramMessageWithRetry(
+          telegramBotToken,
+          telegramChatId,
+          telegramMessage
+        );
+      }
 
       if (!telegramResult.success) {
         console.error("Failed to send Telegram message after all retries:", telegramResult.error);

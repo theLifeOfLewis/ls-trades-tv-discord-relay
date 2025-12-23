@@ -73,9 +73,10 @@ export class TradeStorage {
   }
 
   async handleCleanup(request) {
-    // Remove trades older than 24 hours and signals older than 10 seconds
+    // Remove trades older than 24 hours, archives older than 30 days, and signals older than 10 seconds
     const now = Date.now();
     const tradeMaxAge = 24 * 60 * 60 * 1000; // 24 hours
+    const archiveMaxAge = 30 * 24 * 60 * 60 * 1000; // 30 days
     const signalMaxAge = 10 * 1000; // 10 seconds
 
     // Clean up old trades
@@ -86,6 +87,17 @@ export class TradeStorage {
       if (trade.lastUpdate && (now - trade.lastUpdate > tradeMaxAge)) {
         await this.state.storage.delete(key);
         cleanedTradeCount++;
+      }
+    }
+
+    // Clean up old archives (older than 30 days)
+    const allArchives = await this.state.storage.list({ prefix: 'archive:' });
+    let cleanedArchiveCount = 0;
+
+    for (const [key, archive] of allArchives) {
+      if (archive.archivedAt && (now - archive.archivedAt > archiveMaxAge)) {
+        await this.state.storage.delete(key);
+        cleanedArchiveCount++;
       }
     }
 
@@ -104,6 +116,7 @@ export class TradeStorage {
       JSON.stringify({
         success: true,
         cleanedTradeCount,
+        cleanedArchiveCount,
         cleanedSignalCount
       }),
       { headers: { 'Content-Type': 'application/json' } }
