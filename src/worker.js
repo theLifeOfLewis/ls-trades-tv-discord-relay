@@ -25,7 +25,7 @@ const EntrySchema = BaseSchema.extend({
   tp1: z.string(),
   tp2: z.string(),
   tradeId: z.string(),
-  grade: z.enum(['A', 'A+', 'A++']).optional()
+  grade: z.enum(['A', 'A+', 'A++', 'A+++']).optional()
 });
 
 const ExitSchema = BaseSchema.extend({
@@ -460,7 +460,8 @@ function formatTelegramMessage(type, payload) {
   const gradeEmoji = {
     'A': '⭐',
     'A+': '⭐⭐',
-    'A++': '⭐⭐⭐'
+    'A++': '⭐⭐⭐',
+    'A+++': '⭐⭐⭐⭐'
   };
 
   switch (type) {
@@ -1164,7 +1165,8 @@ export default {
     const gradeColors = {
       'A': 0xFFD700,   // Gold
       'A+': 0xFF8C00,  // Dark Orange
-      'A++': 0xFF0000  // Red
+      'A++': 0xFF0000, // Red
+      'A+++': 0x9C27B0 // Purple (highest tier)
     };
 
     let content = "";
