@@ -607,13 +607,15 @@ export default {
     const now = new Date();
     const etDate = new Date(now.toLocaleString('en-US', { timeZone: 'America/New_York' }));
     const dateStr = etDate.toISOString().split('T')[0].replace(/-/g, '');
+    const dayOfWeek = etDate.getDay();
+    const isFriday = dayOfWeek === 5;
 
     // Get daily archived trades for today
     const archivedTrades = await getDailyArchives(env, dateStr);
     const dailyStats = calculateDailySummary(archivedTrades);
 
-    // Send daily summary to Discord
-    if (dailyStats.totalTrades > 0) {
+    // Send daily summary to Discord (skip on Friday since weekly summary will be sent)
+    if (dailyStats.totalTrades > 0 && !isFriday) {
       const summaryEmbed = {
         title: '📊 End of Day Summary',
         color: 0x00FF00, // Green
@@ -640,11 +642,11 @@ export default {
       console.log('No completed trades today - skipping daily summary');
     }
 
-    // Send daily summary to Telegram if configured
+    // Send daily summary to Telegram if configured (skip on Friday since weekly summary will be sent)
     const telegramBotToken = env.TELEGRAM_BOT_TOKEN;
     const telegramChatId = env.TELEGRAM_CHAT_ID;
 
-    if (telegramBotToken && telegramChatId && dailyStats.totalTrades > 0) {
+    if (telegramBotToken && telegramChatId && dailyStats.totalTrades > 0 && !isFriday) {
       const telegramSummary = [
         '📊 <b>End of Day Summary</b>',
         '═══════════════════════',
@@ -668,8 +670,7 @@ export default {
     }
 
     // Check if today is Friday (day 5) - send weekly summary
-    const dayOfWeek = etDate.getDay();
-    if (dayOfWeek === 5) { // Friday
+    if (isFriday) { // Friday
       console.log('Friday market close - calculating weekly summary');
 
       const weekRange = getWeekDateRange(now);
