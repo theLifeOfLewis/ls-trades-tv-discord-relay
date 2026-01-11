@@ -537,13 +537,15 @@ function formatTelegramMessage(type, payload) {
 
     case 'NY_AM_BULLISH':
       return `📈 <b>NY OPENING BIAS: BULLISH</b> 🟢\n\n` +
-             `Good Morning Traders, Expecting Longs during the New York AM Session\n\n` +
+             `Good Morning Traders, Initial bias is for Longs during the New York AM Session.\n` +
+             `As reactionary traders, our bias may shift based on NYSE open activity.\n\n` +
              `📊 Symbol: ${symbol}\n` +
              `📅 Date: ${dateOnly}`;
 
     case 'NY_AM_BEARISH':
       return `📉 <b>NY OPENING BIAS: BEARISH</b> 🔴\n\n` +
-             `Good Morning Traders, Expecting Shorts during the New York AM Session\n\n` +
+             `Good Morning Traders, Initial bias is for Shorts during the New York AM Session.\n` +
+             `As reactionary traders, our bias may shift based on NYSE open activity.\n\n` +
              `📊 Symbol: ${symbol}\n` +
              `📅 Date: ${dateOnly}`;
 
@@ -1276,7 +1278,8 @@ export default {
       case "NY_AM_BULLISH":
         content = [
           "**NY Opening Bias: BULLISH** 🟢",
-          "Good Morning Traders, Expecting Longs during the New York AM Session",
+          "Good Morning Traders, Initial bias is for Longs during the New York AM Session.",
+          "As reactionary traders, our bias may shift based on NYSE open activity.",
           "",
           `📊 Symbol: ${symbol}`,
           `📅 Date: ${dateOnly}`
@@ -1286,7 +1289,8 @@ export default {
       case "NY_AM_BEARISH":
         content = [
           "**NY Opening Bias: BEARISH** 🔴",
-          "Good Morning Traders, Expecting Shorts during the New York AM Session",
+          "Good Morning Traders, Initial bias is for Shorts during the New York AM Session.",
+          "As reactionary traders, our bias may shift based on NYSE open activity.",
           "",
           `📊 Symbol: ${symbol}`,
           `📅 Date: ${dateOnly}`
