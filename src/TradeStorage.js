@@ -26,6 +26,12 @@ export class TradeStorage {
           return await this.handleCheckDuplicate(request);
         case '/create-if-none-active':
           return await this.handleCreateIfNoneActive(request);
+        case '/set-pending-bias':
+          return await this.handleSetPendingBias(request);
+        case '/get-pending-bias':
+          return await this.handleGetPendingBias(request);
+        case '/clear-pending-bias':
+          return await this.handleClearPendingBias(request);
         default:
           return new Response('Not found', { status: 404 });
       }
@@ -112,12 +118,25 @@ export class TradeStorage {
       }
     }
 
+    // Clean up old pending biases (older than 24 hours)
+    const biasMaxAge = 24 * 60 * 60 * 1000; // 24 hours
+    const allBiases = await this.state.storage.list({ prefix: 'bias:' });
+    let cleanedBiasCount = 0;
+
+    for (const [key, biasData] of allBiases) {
+      if (biasData.receivedAt && (now - biasData.receivedAt > biasMaxAge)) {
+        await this.state.storage.delete(key);
+        cleanedBiasCount++;
+      }
+    }
+
     return new Response(
       JSON.stringify({
         success: true,
         cleanedTradeCount,
         cleanedArchiveCount,
-        cleanedSignalCount
+        cleanedSignalCount,
+        cleanedBiasCount
       }),
       { headers: { 'Content-Type': 'application/json' } }
     );
@@ -196,6 +215,36 @@ export class TradeStorage {
 
     // No active trade exists, create atomically
     await this.state.storage.put(key, trade);
+    return new Response(
+      JSON.stringify({ success: true }),
+      { headers: { 'Content-Type': 'application/json' } }
+    );
+  }
+
+  async handleSetPendingBias(request) {
+    const { dateStr, biasData } = await request.json();
+    const key = `bias:${dateStr}`;
+    await this.state.storage.put(key, biasData);
+    return new Response(
+      JSON.stringify({ success: true }),
+      { headers: { 'Content-Type': 'application/json' } }
+    );
+  }
+
+  async handleGetPendingBias(request) {
+    const { dateStr } = await request.json();
+    const key = `bias:${dateStr}`;
+    const value = await this.state.storage.get(key);
+    return new Response(
+      JSON.stringify({ value }),
+      { headers: { 'Content-Type': 'application/json' } }
+    );
+  }
+
+  async handleClearPendingBias(request) {
+    const { dateStr } = await request.json();
+    const key = `bias:${dateStr}`;
+    await this.state.storage.delete(key);
     return new Response(
       JSON.stringify({ success: true }),
       { headers: { 'Content-Type': 'application/json' } }

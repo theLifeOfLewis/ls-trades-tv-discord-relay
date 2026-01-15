@@ -22,9 +22,10 @@ new_sqlite_classes = ["TradeStorage"]
 # Cleanup: Daily at 1:00 AM UTC to remove old trades and signal markers
 [triggers]
 crons = [
-  "0 20 * * 1-5",  # Market close at 8 PM UTC for EDT (Mar-Nov) - Mon-Fri
-  "0 21 * * 1-5",  # Market close at 9 PM UTC for EST (Nov-Mar) - Mon-Fri
-  "0 1 * * *"      # Daily cleanup at 1 AM UTC
+  "59 22 * * 1-5",  # End of day summary at 5:59 PM EST (22:59 UTC) - Mon-Fri
+  "30 12 * * 1-5",  # Bias release at 8:30 AM EST (12:30 UTC) Nov-Mar - Mon-Fri
+  "30 13 * * 1-5",  # Bias release at 8:30 AM EDT (13:30 UTC) Mar-Nov - Mon-Fri
+  "0 1 * * *"       # Daily cleanup at 1 AM UTC
 ]
 
 # Enable logging for debugging

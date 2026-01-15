@@ -95,6 +95,35 @@ async function deleteTrade(env, tradeId) {
   });
 }
 
+async function setPendingBias(env, dateStr, biasData) {
+  const stub = getTradeStorage(env);
+  await stub.fetch('https://fake-host/set-pending-bias', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ dateStr, biasData })
+  });
+}
+
+async function getPendingBias(env, dateStr) {
+  const stub = getTradeStorage(env);
+  const response = await stub.fetch('https://fake-host/get-pending-bias', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ dateStr })
+  });
+  const { value } = await response.json();
+  return value;
+}
+
+async function clearPendingBias(env, dateStr) {
+  const stub = getTradeStorage(env);
+  await stub.fetch('https://fake-host/clear-pending-bias', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ dateStr })
+  });
+}
+
 async function cleanupOldTrades(env) {
   const stub = getTradeStorage(env);
   const response = await stub.fetch('https://fake-host/cleanup', {
@@ -591,8 +620,103 @@ export default {
       return;
     }
 
-    // Handle market close cron (8 PM UTC for EDT, 9 PM UTC for EST = 4 PM ET)
-    const isMarketClose = cronType === "0 20 * * 1-5" || cronType === "0 21 * * 1-5";
+    // Handle bias release cron (8:30am ET)
+    const isBiasRelease = cronType === "30 12 * * 1-5" || cronType === "30 13 * * 1-5";
+    if (isBiasRelease) {
+      console.log(`Bias release cron triggered: ${cronType}`);
+
+      // Get today's date in ET timezone
+      const now = new Date();
+      const etDate = new Date(now.toLocaleString('en-US', { timeZone: 'America/New_York' }));
+      const dateStr = etDate.toISOString().split('T')[0].replace(/-/g, '');
+
+      // Check for pending bias alert
+      const pendingBias = await getPendingBias(env, dateStr);
+
+      if (!pendingBias) {
+        console.log('No pending bias alert to release');
+        return;
+      }
+
+      console.log(`Releasing pending bias alert: ${pendingBias.type}`);
+
+      // Get webhook URLs
+      const webhookUrl = env.DISCORD_WEBHOOK_URL;
+      const telegramBotToken = env.TELEGRAM_BOT_TOKEN;
+      const telegramChatId = env.TELEGRAM_CHAT_ID;
+
+      // Format time and date
+      const formatDateOnly = (timestamp) => {
+        if (!timestamp) return "N/A";
+        try {
+          const date = new Date(Number(timestamp));
+          if (isNaN(date.getTime())) return "N/A";
+          const options = {
+            timeZone: 'America/New_York',
+            weekday: 'short',
+            year: 'numeric',
+            month: 'short',
+            day: 'numeric'
+          };
+          return new Intl.DateTimeFormat('en-US', options).format(date);
+        } catch (e) {
+          return "N/A";
+        }
+      };
+
+      const dateOnly = formatDateOnly(pendingBias.time);
+      const { type, symbol } = pendingBias;
+
+      // Send to Discord (using existing message format)
+      if (webhookUrl) {
+        let content = '';
+        if (type === 'NY_AM_BULLISH') {
+          content = [
+            "**NY Opening Bias: BULLISH** 🟢",
+            "Good Morning Traders, Initial bias is for Longs during the New York AM Session.",
+            "As reactionary traders, our bias may shift based on NYSE open activity.",
+            "",
+            `📊 Symbol: ${symbol}`,
+            `📅 Date: ${dateOnly}`
+          ].join("\n");
+        } else if (type === 'NY_AM_BEARISH') {
+          content = [
+            "**NY Opening Bias: BEARISH** 🔴",
+            "Good Morning Traders, Initial bias is for Shorts during the New York AM Session.",
+            "As reactionary traders, our bias may shift based on NYSE open activity.",
+            "",
+            `📊 Symbol: ${symbol}`,
+            `📅 Date: ${dateOnly}`
+          ].join("\n");
+        }
+
+        await sendDiscordMessageWithRetry(webhookUrl, { content });
+        console.log(`✅ Sent ${type} bias alert for ${symbol}`);
+      }
+
+      // Send to Telegram if configured
+      if (telegramBotToken && telegramChatId) {
+        const emoji = type === 'NY_AM_BULLISH' ? '🟢' : '🔴';
+        const direction = type === 'NY_AM_BULLISH' ? 'Longs' : 'Shorts';
+        const telegramMessage =
+          `${emoji} <b>NY Opening Bias: ${direction.toUpperCase()}</b>\n\n` +
+          `Good Morning Traders, Initial bias is for ${direction} during the New York AM Session.\n` +
+          `As reactionary traders, our bias may shift based on NYSE open activity.\n\n` +
+          `📊 Symbol: ${symbol}\n` +
+          `📅 Date: ${dateOnly}`;
+
+        await sendTelegramMessageWithRetry(telegramBotToken, telegramChatId, telegramMessage);
+      }
+
+      // Clear the pending bias
+      await clearPendingBias(env, dateStr);
+      console.log('Bias alert released and cleared');
+
+      return;
+    }
+
+    // Handle market close cron (5:59 PM EST = 22:59 UTC)
+    const isMarketClose = cronType === "59 22 * * 1-5";
     if (!isMarketClose) {
       console.warn(`Unknown cron type: ${cronType}`);
       return;
@@ -1016,6 +1140,47 @@ export default {
         { status: 200, headers: { "Content-Type": "application/json" } }
       );
     }
+
+    // Special handling for NY_AM bias alerts (delay until 8:30am ET)
+    if (isBiasSignal && (type === 'NY_AM_BULLISH' || type === 'NY_AM_BEARISH')) {
+      // Get current ET time
+      const nowDate = new Date();
+      const etNow = new Date(nowDate.toLocaleString('en-US', { timeZone: 'America/New_York' }));
+      const etHour = etNow.getHours();
+      const etMinute = etNow.getMinutes();
+      const etTimeInMinutes = etHour * 60 + etMinute;
+      const releaseTimeInMinutes = 8 * 60 + 30; // 8:30am
+
+      if (etTimeInMinutes < releaseTimeInMinutes) {
+        // Before 8:30am ET - queue the bias alert
+        const dateStr = etNow.toISOString().split('T')[0].replace(/-/g, '');
+        await setPendingBias(env, dateStr, {
+          type,
+          symbol,
+          tf,
+          time: payload.time || Date.now(),
+          profile: payload.profile,
+          receivedAt: Date.now(),
+          payload: payload // Store full payload for later
+        });
+
+        console.log(`Queued ${type} bias alert for release at 8:30am ET`);
+        return new Response(
+          JSON.stringify({
+            status: 'queued',
+            type,
+            releaseTime: '8:30am ET',
+            message: 'Bias alert queued for morning release'
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } }
+        );
+      }
+
+      // After 8:30am ET - proceed with immediate send (fall through to existing logic)
+      console.log(`Sending ${type} bias alert immediately (after 8:30am ET)`);
+    }
+
+    // BIAS_FLIP alerts and post-8:30am NY_AM alerts continue with existing logic...
 
     // Validate tradeId format (should be a number from Pine Script)
     if (tradeId && !tradeId.startsWith("TRADE_") && (isNaN(parseInt(tradeId)) || parseInt(tradeId) <= 0)) {
