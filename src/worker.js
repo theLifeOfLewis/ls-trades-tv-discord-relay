@@ -45,8 +45,21 @@ const BiasSchema = BaseSchema.extend({
   profile: z.string().optional()
 });
 
+const WeeklySummarySchema = BaseSchema.extend({
+  type: z.enum(['WEEKLY_SUMMARY']),
+  symbol: z.string(),
+  time: z.string(),
+  trades: z.string(),
+  wins: z.string(),
+  losses: z.string(),
+  pointsGained: z.string(),
+  pointsLost: z.string(),
+  netPoints: z.string(),
+  winRate: z.string()
+});
+
 // Union schema for all valid alert types
-const AlertSchema = z.union([EntrySchema, ExitSchema, BiasSchema]);
+const AlertSchema = z.union([EntrySchema, ExitSchema, BiasSchema, WeeklySummarySchema]);
 
 // Helper to get Durable Object instance
 function getTradeStorage(env) {
@@ -590,6 +603,19 @@ function formatTelegramMessage(type, payload) {
              `📊 Symbol: ${symbol}\n` +
              `📅 Date: ${dateOnly}`;
 
+    case 'WEEKLY_SUMMARY':
+      return `📊 <b>WEEKLY SUMMARY</b> 📈\n` +
+             `═══════════════════════\n` +
+             `📆 Symbol: ${symbol}\n` +
+             `🕐 ${time}\n\n` +
+             `📊 Total Trades: <b>${payload.trades}</b>\n` +
+             `✅ Wins: <b>${payload.wins}</b>\n` +
+             `❌ Losses: <b>${payload.losses}</b>\n` +
+             `💰 Points Gained: <b>${payload.pointsGained}</b>\n` +
+             `📉 Points Lost: <b>${payload.pointsLost}</b>\n` +
+             `💵 Net Points: <b>${payload.netPoints}</b>\n` +
+             `📈 Win Rate: <b>${payload.winRate}%</b>`;
+
     default:
       return `⚠️ <b>UNKNOWN ALERT TYPE</b>\n\n` +
              `Type: ${type}\n` +
@@ -621,7 +647,8 @@ export default {
     }
 
     // Handle bias release cron (8:30am ET)
-    const isBiasRelease = cronType === "30 12 * * 1-5" || cronType === "30 13 * * 1-5";
+    // Note: Use "30 13" for EST (Nov-Mar), "30 12" for EDT (Mar-Nov)
+    const isBiasRelease = cronType === "30 13 * * 1-5";
     if (isBiasRelease) {
       console.log(`Bias release cron triggered: ${cronType}`);
 
@@ -707,6 +734,17 @@ export default {
 
         await sendTelegramMessageWithRetry(telegramBotToken, telegramChatId, telegramMessage);
       }
+
+      // Track that initial bias was sent today (prevents duplicate alerts)
+      const biasSentKey = `bias-sent:${dateStr}`;
+      await setTrade(env, biasSentKey, {
+        type: pendingBias.type,
+        symbol: pendingBias.symbol,
+        sentAt: new Date().toISOString(),
+        source: 'cron-release',
+        lastUpdate: Date.now()  // Required for cleanup
+      });
+      console.log(`Tracked ${pendingBias.type} as sent for today (cron release)`);
 
       // Clear the pending bias
       await clearPendingBias(env, dateStr);
@@ -1111,7 +1149,7 @@ export default {
     let symbol = scrub(payload.symbol) || "UNKNOWN";
     let tf = scrub(payload.tf);
     const isEntrySignal = type === "LONG_ENTRY" || type === "SHORT_ENTRY";
-    const isBiasSignal = type === "NY_AM_BULLISH" || type === "NY_AM_BEARISH" || type === "BIAS_FLIP_BULLISH" || type === "BIAS_FLIP_BEARISH";
+    const isBiasSignal = type === "NY_AM_BULLISH" || type === "NY_AM_BEARISH" || type === "BIAS_FLIP_BULLISH" || type === "BIAS_FLIP_BEARISH" || type === "WEEKLY_SUMMARY";
     
     // For non-entry signals, we'll get symbol/tf from the trade later
     // Time: prefer the TradingView-provided time when present for all signal types
@@ -1176,7 +1214,26 @@ export default {
         );
       }
 
-      // After 8:30am ET - proceed with immediate send (fall through to existing logic)
+      // After 8:30am ET - check for duplicate before sending
+      console.log(`Processing ${type} bias alert (after 8:30am ET)`);
+
+      // Check if initial bias was already sent today (prevents duplicate alerts)
+      const biasSentKey = `bias-sent:${etNow.toISOString().split('T')[0].replace(/-/g, '')}`;
+      const existingBiasSent = await getTrade(env, biasSentKey);
+
+      if (existingBiasSent) {
+        console.log(`Skipping duplicate ${type} alert - initial bias already sent today at ${existingBiasSent.sentAt}`);
+        return new Response(
+          JSON.stringify({
+            status: 'duplicate',
+            type,
+            message: 'Initial bias already sent today',
+            previouslySentAt: existingBiasSent.sentAt
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } }
+        );
+      }
+
       console.log(`Sending ${type} bias alert immediately (after 8:30am ET)`);
     }
 
@@ -1482,6 +1539,22 @@ export default {
         ].join("\n");
         console.log(`✅ Sent BIAS_FLIP_BEARISH alert for ${symbol}`);
         break;
+      case "WEEKLY_SUMMARY":
+        content = [
+          "**📊 WEEKLY SUMMARY 📈**",
+          `Symbol: ${symbol}`,
+          `Time: ${time}`,
+          "",
+          `📊 Total Trades: **${payload.trades}**`,
+          `✅ Wins: **${payload.wins}**`,
+          `❌ Losses: **${payload.losses}**`,
+          `💰 Points Gained: **${payload.pointsGained}**`,
+          `📉 Points Lost: **${payload.pointsLost}**`,
+          `💵 Net Points: **${payload.netPoints}**`,
+          `📈 Win Rate: **${payload.winRate}%**`
+        ].join("\n");
+        console.log(`✅ Sent WEEKLY_SUMMARY for ${symbol}`);
+        break;
       default:
         // Log unknown alert types for debugging
         console.warn("Unknown alert type received:", type, "Payload:", payload);
@@ -1575,6 +1648,21 @@ export default {
         }),
         { status: 502, headers: { "Content-Type": "application/json" } }
       );
+    }
+
+    // Track successful initial bias alert to prevent duplicates
+    if (type === 'NY_AM_BULLISH' || type === 'NY_AM_BEARISH') {
+      const nowForTracking = new Date();
+      const etDateForTracking = new Date(nowForTracking.toLocaleString('en-US', { timeZone: 'America/New_York' }));
+      const biasSentKey = `bias-sent:${etDateForTracking.toISOString().split('T')[0].replace(/-/g, '')}`;
+      await setTrade(env, biasSentKey, {
+        type,
+        symbol,
+        sentAt: nowForTracking.toISOString(),
+        source: 'immediate',
+        lastUpdate: nowForTracking.getTime()  // Required for cleanup
+      });
+      console.log(`Tracked ${type} as sent for today (immediate send)`);
     }
 
     // Success response with confirmation
