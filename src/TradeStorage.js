@@ -190,6 +190,10 @@ export class TradeStorage {
     const activeTrades = [];
 
     for (const [k, v] of allTrades) {
+      // Skip bias tracking entries (they're not real trades)
+      if (k.includes('bias-sent:')) {
+        continue;
+      }
       // Only consider trades that aren't marked as closed
       if (!v.closed) {
         activeTrades.push({ key: k, trade: v });

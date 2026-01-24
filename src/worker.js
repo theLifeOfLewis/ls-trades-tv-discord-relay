@@ -896,12 +896,14 @@ export default {
       }
     }
 
-    // Get active trades from Durable Object
+    // Get active trades from Durable Object (filter out bias tracking entries)
     const activeTrades = await getActiveTrades(env);
-    const tradesList = Object.entries(activeTrades).map(([key, trade]) => ({
-      id: key.replace('trade:', ''),
-      ...trade
-    }));
+    const tradesList = Object.entries(activeTrades)
+      .filter(([key]) => !key.includes('bias-sent:'))
+      .map(([key, trade]) => ({
+        id: key.replace('trade:', ''),
+        ...trade
+      }));
 
     if (tradesList.length === 0) {
       console.log("No active trades at market close");
@@ -953,6 +955,24 @@ export default {
         console.error(`Failed to send market close batch ${batchIndex + 1}:`, result.error);
       }
 
+      // Send to Telegram as well
+      if (telegramBotToken && telegramChatId) {
+        const telegramTradeLines = batch.map(trade => {
+          const status = trade.partialClosed ? '(Partial)' : '';
+          const grade = trade.grade ? ` [${trade.grade}]` : '';
+          return `• ${trade.type} ${trade.symbol}${grade} ${status}\n  Entry: ${formatPrice(trade.entry)} | SL: ${formatPrice(trade.sl)} | TP1: ${formatPrice(trade.tp1)}`;
+        }).join('\n\n');
+
+        const telegramMessage = batchIndex === 0
+          ? `🔔 <b>Hard Stop - Market Close</b>\n═══════════════════════\n${tradesList.length} active trade(s) will be closed.\n\n${telegramTradeLines}`
+          : `<b>Market Close (continued)</b> - Batch ${batchIndex + 1}/${batches.length}\n\n${telegramTradeLines}`;
+
+        const telegramResult = await sendTelegramMessageWithRetry(telegramBotToken, telegramChatId, telegramMessage);
+        if (!telegramResult.success) {
+          console.error(`Failed to send Telegram market close batch ${batchIndex + 1}:`, telegramResult.error);
+        }
+      }
+
       // Delay between batches to avoid rate limits
       if (batchIndex < batches.length - 1) {
         await new Promise(resolve => setTimeout(resolve, 1000));
@@ -972,14 +992,17 @@ export default {
     // Health check endpoint
     if (request.method === "GET" && url.pathname === "/health") {
       const activeTrades = await getActiveTrades(env);
-      const tradesList = Object.entries(activeTrades).map(([key, t]) => ({
-        id: key.replace('trade:', ''),
-        type: t.type,
-        symbol: t.symbol,
-        tf: t.tf,
-        startTime: t.startTime,
-        partialClosed: t.partialClosed || false
-      }));
+      // Filter out bias tracking entries (they're not real trades)
+      const tradesList = Object.entries(activeTrades)
+        .filter(([key]) => !key.includes('bias-sent:'))
+        .map(([key, t]) => ({
+          id: key.replace('trade:', ''),
+          type: t.type,
+          symbol: t.symbol,
+          tf: t.tf,
+          startTime: t.startTime,
+          partialClosed: t.partialClosed || false
+        }));
       
       return new Response(
         JSON.stringify({
@@ -994,7 +1017,50 @@ export default {
         }
       );
     }
-    
+
+    // Manual clear-trades endpoint (requires secret for security)
+    if (request.method === "POST" && url.pathname === "/clear-trades") {
+      try {
+        const body = await request.json();
+        const providedSecret = body.secret;
+        const expectedSecret = env.WEBHOOK_SECRET;
+
+        if (!providedSecret || providedSecret !== expectedSecret) {
+          return new Response(
+            JSON.stringify({ status: "rejected", reason: "Invalid or missing secret" }),
+            { status: 401, headers: { "Content-Type": "application/json" } }
+          );
+        }
+
+        // Get active trades before clearing (filter out bias tracking entries)
+        const activeTrades = await getActiveTrades(env);
+        const tradeKeys = Object.keys(activeTrades).filter(key => !key.includes('bias-sent:'));
+        const tradeCount = tradeKeys.length;
+
+        // Delete all active trades (skip bias tracking entries)
+        for (const key of tradeKeys) {
+          const tradeId = key.replace('trade:', '');
+          await deleteTrade(env, tradeId);
+        }
+
+        console.log(`Manual clear: Deleted ${tradeCount} active trade(s)`);
+
+        return new Response(
+          JSON.stringify({
+            status: "success",
+            message: `Cleared ${tradeCount} active trade(s)`,
+            timestamp: new Date().toISOString()
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } }
+        );
+      } catch (e) {
+        return new Response(
+          JSON.stringify({ status: "error", reason: e.message }),
+          { status: 400, headers: { "Content-Type": "application/json" } }
+        );
+      }
+    }
+
     if (request.method !== "POST") {
       return jsonResponse({ status: 'rejected', reason: 'Method not allowed' }, 405);
     }
